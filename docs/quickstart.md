@@ -14,7 +14,7 @@ with polarobi: add variables, add constraints and read results.
 ```python
 import gurobipy as gp
 import polars as pl
-import polarobi  # registers df.grb
+from polarobi import GurobiFrame as grb
 
 orders = pl.DataFrame(
     {
@@ -29,8 +29,9 @@ capacity = pl.DataFrame({"factory": ["f1", "f2"], "capacity": [50, 80]})
 model = gp.Model()
 ```
 
-Importing `polarobi` is what registers the `grb` namespace on every polars DataFrame, so you need it once per
-process even if you never use the name.
+`grb(df)` gives you polarobi's operations on a frame. It is the typed form of the `df.grb` namespace that importing
+polarobi registers on every DataFrame: both do the same, but type checkers only understand `grb(df)`. See
+[Type Checking](installation.md#type-checking) for why.
 
 
 ## Adding Variables
@@ -39,7 +40,7 @@ Each row of `orders` is a candidate assignment, so we add one binary variable pe
 the margin it earns, computed by a polars expression.
 
 ```python
-x = orders.grb.add_vars(
+x = grb(orders).add_vars(
     model,
     by=["order", "factory"],
     vtype="B",
@@ -78,14 +79,14 @@ First, every order is assigned at most once. Grouping `x` by `order` gives one c
 coefficient of 1 for each of its variables:
 
 ```python
-assign = x.grb.add_constrs(model, by="order", sense="<=", rhs=1.0, coef=1.0, name="assign")
+assign = grb(x).add_constrs(model, by="order", sense="<=", rhs=1.0, coef=1.0, name="assign")
 ```
 
 Second, no factory exceeds its capacity. Here the right-hand side differs per constraint, so we pass `capacity` as
 the *rows* frame, one row per constraint, and take `rhs` from its column. The coefficient is each order's quantity:
 
 ```python
-cap = x.grb.add_constrs(
+cap = grb(x).add_constrs(
     model, capacity, by="factory", sense="<=", rhs="capacity", coef="quantity", name="cap"
 )
 ```
@@ -134,8 +135,8 @@ model.optimize()
 you can filter and join like any other:
 
 ```python
-chosen = x.grb.get(model, "X").filter(pl.col("X") > 0.5)
-slack = cap.grb.get(model, "Slack")
+chosen = grb(x).get(model, "X").filter(pl.col("X") > 0.5)
+slack = grb(cap).get(model, "Slack")
 ```
 
 ??? info "Output"

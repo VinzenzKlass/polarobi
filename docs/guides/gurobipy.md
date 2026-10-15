@@ -13,22 +13,23 @@ regular families and plain gurobipy for everything else, in any order, in the sa
 `handles` returns the gurobipy objects of a frame's rows, in row order:
 
 ```python
-variables = x.grb.handles(model)
-constraints = caps.grb.handles(model, kind="constr")
+variables = grb(x).handles(model)
+constraints = grb(caps).handles(model, kind="constr")
 ```
 
 They are the same objects gurobipy itself returns:
 
 ```python
 model.update()
-assert model.getVarByName("ship[o1,2026-01]").sameAs(variables[0])
+first = model.getVarByName("ship[o1,2026-01]")
+assert first is not None and first.sameAs(variables[0])
 ```
 
 `tupledict` returns them keyed like `Model.addVars` keys its result: by the value of a single key column, or by
 tuples of several:
 
 ```python
-ship = x.grb.tupledict(model, ["order", "week"])
+ship = grb(x).tupledict(model, ["order", "week"])
 model.addLConstr(ship["o1", "2026-01"] + ship["o1", "2026-02"] <= 1)
 total = ship.sum("o1", "*")
 ```
@@ -56,7 +57,7 @@ terms = pl.concat(
     ],
     how="vertical_relaxed",
 )
-terms.grb.add_constrs(model, by=[], sense="<=", rhs=max_air, name="air_limit")
+grb(terms).add_constrs(model, by=[], sense="<=", rhs=max_air, name="air_limit")
 ```
 
 !!! note "Pending elements"

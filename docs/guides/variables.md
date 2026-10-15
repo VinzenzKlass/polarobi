@@ -11,7 +11,7 @@ rows play the role of the keys, and its columns supply bounds, objective coeffic
 ```python
 import gurobipy as gp
 import polars as pl
-import polarobi
+from polarobi import GurobiFrame as grb
 
 model = gp.Model()
 shipments = pl.DataFrame(
@@ -22,7 +22,7 @@ shipments = pl.DataFrame(
     }
 )
 
-x = shipments.grb.add_vars(model, by=["order", "week"], ub=1.0, obj="cost", name="ship")
+x = grb(shipments).add_vars(model, by=["order", "week"], ub=1.0, obj="cost", name="ship")
 ```
 
 `add_vars` returns the input frame with one more column, `idx`, holding each variable's Gurobi column index. Keep
@@ -57,7 +57,7 @@ Nulls are rejected: Gurobi has no notion of a missing bound.
 `"I"` (integer), `"S"` (semi-continuous) or `"N"` (semi-integer). The `gp.GRB` constants work as well:
 
 ```python
-y = sites.grb.add_vars(model, vtype=gp.GRB.BINARY, name="open")
+y = grb(sites).add_vars(model, vtype=gp.GRB.BINARY, name="open")
 ```
 
 
@@ -67,7 +67,7 @@ A `name` string names variables the way `Model.addVars` does: the name, then the
 brackets. The key columns are the ones listed in `by`, or all of the frame's columns if `by` is omitted.
 
 ```python
-x = shipments.grb.add_vars(model, by=["order", "week"], name="ship")
+x = grb(shipments).add_vars(model, by=["order", "week"], name="ship")
 # ship[o1,2026-01], ship[o1,2026-02], ship[o2,2026-01]
 ```
 
@@ -86,7 +86,7 @@ Other key types, such as datetimes, raise a `TypeError` when used for names. For
 expression; it is evaluated per row and may produce any string:
 
 ```python
-x = shipments.grb.add_vars(model, name=pl.concat_str(pl.lit("ship_"), pl.col("order")))
+x = grb(shipments).add_vars(model, name=pl.concat_str(pl.lit("ship_"), pl.col("order")))
 ```
 
 A null produced by a name expression leaves that variable unnamed, so Gurobi gives it its default name, as an empty

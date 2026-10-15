@@ -4,13 +4,37 @@ Build gurobipy models from polars frames. Columns go from Arrow memory into the 
 one call per variable or constraint family, while the model stays fully usable through gurobipy.
 
 ```python
-import polarobi  # registers df.grb
+import gurobipy as gp
+import polars as pl
+from polarobi import GurobiFrame as grb
 
-x = dist.grb.add_vars(model, by=("so_p7", "vendor_code", "ex_go_date"), vtype="B", obj="cost", name="x_dist")
-caps = x.grb.add_constrs(model, vendor_cap, by=("vendor_code", "ex_go_date"), sense="<=", rhs="max_quantity", coef="quantity")
+orders = pl.DataFrame(
+    {
+        "order": ["o1", "o1", "o2", "o2", "o3"],
+        "factory": ["f1", "f2", "f1", "f2", "f2"],
+        "quantity": [40, 40, 25, 25, 60],
+        "value": [120.0, 100.0, 100.0, 75.0, 120.0],
+    }
+)
+capacity = pl.DataFrame({"factory": ["f1", "f2"], "capacity": [50, 80]})
+
+model = gp.Model()
+model.ModelSense = gp.GRB.MAXIMIZE
+
+# One binary variable per order and factory, worth the order's value.
+x = grb(orders).add_vars(model, by=["order", "factory"], vtype="B", obj="value", name="x")
+# Each order is made at most once, and no factory exceeds its capacity.
+grb(x).add_constrs(model, by="order", sense="<=", rhs=1.0, coef=1.0, name="assign")
+grb(x).add_constrs(
+    model, capacity, by="factory", sense="<=", rhs="capacity", coef="quantity", name="cap"
+)
+
 model.optimize()
-solution = x.grb.get(model, "X").filter(pl.col("X") > 0)
+print(grb(x).get(model, "X").filter(pl.col("X") > 0.5))
 ```
+
+`grb(df)` is the typed form of polars' `df.grb` namespace: both do the same, but type checkers only see the first.
+See [Type Checking](docs/installation.md#type-checking) for why.
 
 ## How it works
 

@@ -3,9 +3,9 @@ Build gurobipy models from polars frames, with data passed from Arrow memory to 
 
 The API is the `grb` DataFrame namespace, registered on import:
 
-    import polarobi  # noqa: F401
+import polarobi
 
-    x = keys.grb.add_vars(model, ...)
+x = keys.grb.add_vars(model, ...)
 """
 
 from polarobi import _library
@@ -14,5 +14,4 @@ _library.bind()
 
 from polarobi._namespace import GurobiFrame  # noqa: E402 - importing registers `df.grb`
 
-# Exported for annotations only; the API is `df.grb`.
 __all__ = ["GurobiFrame"]

@@ -29,6 +29,8 @@ nav = [
 ]
 
 [project.theme]
+favicon = "img/fav.webp"
+logo = "img/fav.webp"
 custom_dir = "docs/overrides"
 features = [
     "content.code.copy",

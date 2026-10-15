@@ -26,8 +26,8 @@ of tuple lookups and `quicksum` loops.
 The simplest case groups a variable frame by one of its columns. Here, every order is shipped at most once:
 
 ```python
-x = shipments.grb.add_vars(model, by=["order", "week"], vtype="B", name="ship")
-once = x.grb.add_constrs(model, by="order", sense="<=", rhs=1.0, coef=1.0, name="once")
+x = grb(shipments).add_vars(model, by=["order", "week"], vtype="B", name="ship")
+once = grb(x).add_constrs(model, by="order", sense="<=", rhs=1.0, coef=1.0, name="once")
 ```
 
 `x` already has an `idx` column, which is where `add_constrs` looks for the variable index by default, so it can be
@@ -48,7 +48,7 @@ join the shipments to the products' tooling:
 
 ```python
 terms = x.join(tooling, on="product").select("tooling", "week", "idx", coef=pl.col("hours"))
-terms.grb.add_constrs(model, tooling_capacity, by=["tooling", "week"], sense="<=", rhs="capacity")
+grb(terms).add_constrs(model, tooling_capacity, by=["tooling", "week"], sense="<=", rhs="capacity")
 ```
 
 A constraint that spans several variable families is a `concat` of their terms. The capacity of a factory, used by
@@ -62,7 +62,7 @@ terms = pl.concat(
     ],
     how="vertical_relaxed",
 )
-terms.grb.add_constrs(model, factories, by=["factory", "week"], sense="<=", rhs="max_quantity")
+grb(terms).add_constrs(model, factories, by=["factory", "week"], sense="<=", rhs="max_quantity")
 ```
 
 Variables that appear on the right-hand side of a mathematical formulation move to the left with a negated
@@ -77,7 +77,7 @@ terms = pl.concat(
     ],
     how="vertical_relaxed",
 )
-terms.grb.add_constrs(model, by="group", sense=">=", rhs=0.0, name="moq")
+grb(terms).add_constrs(model, by="group", sense=">=", rhs=0.0, name="moq")
 ```
 
 !!! tip "Index dtypes"
@@ -93,7 +93,7 @@ control which constraints exist and in which order:
 
 ```python
 factories = pl.DataFrame({"factory": ["f1", "f2"], "capacity": [50.0, 80.0]})
-x.grb.add_constrs(model, factories, by="factory", sense="<=", rhs="capacity", coef="quantity")
+grb(x).add_constrs(model, factories, by="factory", sense="<=", rhs="capacity", coef="quantity")
 ```
 
 Terms whose keys have no row are not part of any constraint. Rows whose keys have no terms are dropped, as an empty
@@ -114,7 +114,7 @@ To mix senses, pass an expression or a Series of these strings:
 
 ```python
 rows = pl.DataFrame({"factory": ["f1", "f2"], "bound": [10.0, 80.0], "kind": [">=", "<="]})
-x.grb.add_constrs(model, rows, by="factory", sense=pl.col("kind"), rhs="bound", coef="quantity")
+grb(x).add_constrs(model, rows, by="factory", sense=pl.col("kind"), rhs="bound", coef="quantity")
 ```
 
 `rhs` takes the same forms as `coef`: a scalar, a column name, an expression or a Series. Expressions and column
@@ -128,7 +128,7 @@ To sum every term into one constraint, pass `by=[]`. A global limit on air freig
 
 ```python
 air = x.filter(pl.col("mode") == "AIR")
-air.grb.add_constrs(model, by=[], sense="<=", rhs=max_air, coef="quantity", name="air_limit")
+grb(air).add_constrs(model, by=[], sense="<=", rhs=max_air, coef="quantity", name="air_limit")
 ```
 
 With `by=[]` there is no rows frame, and a `name` string becomes the constraint's plain name.

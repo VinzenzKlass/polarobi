@@ -16,7 +16,7 @@ attribute:
 ```python
 model.optimize()
 
-solution = x.grb.get(model, "X")
+solution = grb(x).get(model, "X")
 chosen = solution.filter(pl.col("X") > 0.5)
 ```
 
@@ -24,15 +24,15 @@ The same works for constraints and any other attribute Gurobi offers for the ele
 `"RC"` after an LP solve, or `"LB"`, `"UB"` and `"Obj"` at any time:
 
 ```python
-duals = capacity_rows.grb.get(model, "Pi")
-bounds = x.grb.get(model, "UB")
+duals = grb(capacity_rows).get(model, "Pi")
+bounds = grb(x).get(model, "UB")
 ```
 
 Values come back as `Float64`. Bounds at Gurobi's infinity read as `inf`, as they do in gurobipy. Integer attributes
 need `dtype=pl.Int32`:
 
 ```python
-priorities = x.grb.get(model, "BranchPriority", dtype=pl.Int32)
+priorities = grb(x).get(model, "BranchPriority", dtype=pl.Int32)
 ```
 
 Results stay in polars from here on: join them to your data, aggregate them or write them out, without a Python
@@ -40,7 +40,7 @@ object per variable.
 
 ```python
 shipped = (
-    x.grb.get(model, "X")
+    grb(x).get(model, "X")
     .filter(pl.col("X") > 0.5)
     .join(orders, on="order")
     .group_by("factory", maintain_order=True)
@@ -59,13 +59,13 @@ shipped = (
 
 ```python
 # Pin unattainable groups to zero
-x.filter(pl.col("attainable").not_()).grb.set(model, "UB", 0.0)
+grb(x.filter(pl.col("attainable").not_())).set(model, "UB", 0.0)
 
 # Per-variable values from a column
-x.grb.set(model, "Obj", "cost")
+grb(x).set(model, "Obj", "cost")
 
 # Branch on the grouping decisions first
-y.grb.set(model, "BranchPriority", 10)
+grb(y).set(model, "BranchPriority", 10)
 ```
 
 Integer values, whether scalar or an integer column, are written through Gurobi's integer attribute API, so

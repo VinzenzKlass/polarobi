@@ -61,4 +61,33 @@ Rust sources change. `uv build` produces a wheel for your platform.
 ### Type Checking
 
 polars registers namespaces at runtime, so type checkers do not know about `df.grb` and treat its calls as
-untyped. polarobi itself is fully typed, and its own sources check cleanly under strict basedpyright.
+untyped. Python's type system has no way to declare an attribute on another package's class, so there is no
+annotation that fixes that.
+
+`df.grb` is an instance of `polarobi.GurobiFrame`, constructed with the frame. Constructing it yourself gives you
+the same namespace, fully typed. A short alias keeps the calls readable:
+
+```python
+import gurobipy as gp
+import polars as pl
+from polarobi import GurobiFrame as grb
+
+orders = pl.DataFrame({"order": ["o1", "o2"], "value": [3.0, 5.0]})
+model = gp.Model()
+
+x = grb(orders).add_vars(model, by=["order"], vtype="B", obj="value")
+assign = grb(x).add_constrs(model, by=[], sense="<=", rhs=1.0, coef=1.0)
+constraints = grb(assign).handles(model, kind="constr")  # list[gp.Constr]
+```
+
+Type checkers then check every argument and know every return type: `add_vars` returns a `pl.DataFrame`,
+`handles(kind="constr")` a `list[gp.Constr]`, and a misspelled keyword is an error.
+
+In a chain of polars calls, `pipe` does the same:
+
+```python
+x = orders.filter(pl.col("value") > 4).pipe(grb).add_vars(model, vtype="B", obj="value")
+```
+
+`grb(df)` and `df.grb` are the same class doing the same work, so both forms can be mixed freely. polarobi itself
+is fully typed, and its own sources check cleanly under strict basedpyright.

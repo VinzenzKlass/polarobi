@@ -39,8 +39,8 @@ penalty, and a maximum quantity. Vendor weeks without any demand get no constrai
 === "polarobi"
     ```python
     keys = ["vendor_code", "ex_go_date"]
-    x = demand.grb.add_vars(model, by=["order", *keys], vtype="B", name="x")
-    breach = capacity.grb.add_vars(model, by=keys, name="breach")
+    x = grb(demand).add_vars(model, by=["order", *keys], vtype="B", name="x")
+    breach = grb(capacity).add_vars(model, by=keys, name="breach")
 
     quantity = x.select(*keys, "idx", coef=pl.col("quantity"))
     # Only vendor weeks with demand get constraints.
@@ -49,8 +49,8 @@ penalty, and a maximum quantity. Vendor weeks without any demand get no constrai
     minimum = pl.concat(
         [quantity, breach.select(*keys, "idx", coef=pl.lit(1.0))], how="vertical_relaxed"
     )
-    minimum.grb.add_constrs(model, rows, by=keys, sense=">=", rhs="min_qty", name="min")
-    quantity.grb.add_constrs(model, rows, by=keys, sense="<=", rhs="max_qty", name="max")
+    grb(minimum).add_constrs(model, rows, by=keys, sense=">=", rhs="min_qty", name="min")
+    grb(quantity).add_constrs(model, rows, by=keys, sense="<=", rhs="max_qty", name="max")
     ```
 
 What changed:
@@ -75,17 +75,17 @@ depend on a particular name format, pass an expression, such as
 
 | gurobipy | polarobi |
 |---|---|
-| `model.addVars(df.select(keys).iter_rows(), ...)` | `df.grb.add_vars(model, by=keys, ...)` |
+| `model.addVars(df.select(keys).iter_rows(), ...)` | `grb(df).add_vars(model, by=keys, ...)` |
 | `ub=list(caps.values())` | `ub="cap"`, a column of the same frame |
 | `x[(a, b)]` lookups | A join on `a, b` that brings `idx` along |
 | `gp.LinExpr(coefs, [x[k] for k in keys])` | A terms frame with `idx` and `coef` |
 | `quicksum(e1 + e2)` across families | `pl.concat([terms1, terms2], how="vertical_relaxed")` |
 | `expr <= big_m * y` | `y`'s terms with `coef=-big_m`, `rhs=0` |
 | `if not exprs: continue` | Default `drop_empty=True`, or a filtered rows frame |
-| `for row in df.iter_rows(): model.addLConstr(...)` | `terms.grb.add_constrs(model, df, by=keys, ...)` |
-| `y.setAttr("ub", 0)` for some groups | `y.filter(...).grb.set(model, "UB", 0.0)` |
-| `setAttr("BranchPriority", list(y.values()), ...)` | `y.grb.set(model, "BranchPriority", 10)` |
-| `[(k, v.X) for k, v in x.items() if v.X > 0]` | `x.grb.get(model, "X").filter(pl.col("X") > 0)` |
+| `for row in df.iter_rows(): model.addLConstr(...)` | `grb(terms).add_constrs(model, df, by=keys, ...)` |
+| `y.setAttr("ub", 0)` for some groups | `grb(y.filter(...)).set(model, "UB", 0.0)` |
+| `setAttr("BranchPriority", list(y.values()), ...)` | `grb(y).set(model, "BranchPriority", 10)` |
+| `[(k, v.X) for k, v in x.items() if v.X > 0]` | `grb(x).get(model, "X").filter(pl.col("X") > 0)` |
 
 
 ## Checking the Port
