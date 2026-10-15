@@ -47,8 +47,8 @@ penalty, and a maximum quantity. Vendor weeks without any demand get no constrai
     minimum = pl.concat(
         [quantity, breach.select(*keys, "idx", coef=pl.lit(1.0))], how="vertical_relaxed"
     )
-    grb(minimum).add_constrs(model, rows, by=keys, sense=">=", rhs="min_qty", name="min")
-    grb(quantity).add_constrs(model, rows, by=keys, sense="<=", rhs="max_qty", name="max")
+    grb(minimum).add_constrs(model, rows, by=keys, sense=">=", rhs="min_qty", coef="coef", name="min")
+    grb(quantity).add_constrs(model, rows, by=keys, sense="<=", rhs="max_qty", coef="coef", name="max")
     ```
 
 What changed:
@@ -76,7 +76,8 @@ depend on a particular name format, pass an expression, such as
 | `model.addVars(df.select(keys).iter_rows(), ...)` | `grb(df).add_vars(model, by=keys, ...)` |
 | `ub=list(caps.values())` | `ub="cap"`, a column of the same frame |
 | `x[(a, b)]` lookups | A join on `a, b` that brings `idx` along |
-| `gp.LinExpr(coefs, [x[k] for k in keys])` | A terms frame with `idx` and `coef` |
+| `gp.LinExpr(coefs, [x[k] for k in keys])` | A terms frame with `idx` and a coefficient column, passed as `coef=` |
+| `quicksum(x[k] for k in keys)` | A terms frame with `idx`; `coef` defaults to 1 |
 | `quicksum(e1 + e2)` across families | `pl.concat([terms1, terms2], how="vertical_relaxed")` |
 | `expr <= big_m * y` | `y`'s terms with `coef=-big_m`, `rhs=0` |
 | `if not exprs: continue` | Default `drop_empty=True`, or a filtered rows frame |

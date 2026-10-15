@@ -27,28 +27,31 @@ The simplest case groups a variable frame by one of its columns. Here, every ord
 
 ```python
 x = grb(shipments).add_vars(model, by=["order", "week"], vtype="B", name="ship")
-once = grb(x).add_constrs(model, by="order", sense="<=", rhs=1.0, coef=1.0, name="once")
+once = grb(x).add_constrs(model, by="order", sense="<=", rhs=1.0, name="once")
 ```
 
 `x` already has an `idx` column, which is where `add_constrs` looks for the variable index by default, so it can be
-used as the terms frame directly. `coef=1.0` gives every term a coefficient of 1.
+used as the terms frame directly, and every term gets the default coefficient of 1.
 
 `add_constrs` returns the rows, here the distinct orders, with each constraint's row index in an `idx` column.
 
 
 ## Terms
 
-The terms frame needs the key columns `by`, a variable index column and coefficients. The variable index column is
-`idx` by default; pass `var="..."` if it has another name. Coefficients come from the `coef` argument, which, like
-the [bounds of variables](variables.md#bounds-and-objective), accepts a column name (the default is `"coef"`), a
-scalar, an expression or a Series.
+The terms frame needs the key columns `by` and a variable index column, which is `idx` by default; pass
+`var="..."` if it has another name. Coefficients come from the `coef` argument, which, like the
+[bounds of variables](variables.md#bounds-and-objective), accepts a scalar, a column name, an expression or a Series.
+It defaults to 1, as in gurobipy's `quicksum`, so weighted terms always name their coefficient, as in `coef="coef"`
+below. A frame's `coef` column is not used unless you pass it.
 
 Terms usually come from joining a variable frame with your data. To limit the tooling each product needs per week,
 join the shipments to the products' tooling:
 
 ```python
 terms = x.join(tooling, on="product").select("tooling", "week", "idx", coef=pl.col("hours"))
-grb(terms).add_constrs(model, tooling_capacity, by=["tooling", "week"], sense="<=", rhs="capacity")
+grb(terms).add_constrs(
+    model, tooling_capacity, by=["tooling", "week"], sense="<=", rhs="capacity", coef="coef"
+)
 ```
 
 A constraint that spans several variable families is a `concat` of their terms. The capacity of a factory, used by
@@ -62,7 +65,9 @@ terms = pl.concat(
     ],
     how="vertical_relaxed",
 )
-grb(terms).add_constrs(model, factories, by=["factory", "week"], sense="<=", rhs="max_quantity")
+grb(terms).add_constrs(
+    model, factories, by=["factory", "week"], sense="<=", rhs="max_quantity", coef="coef"
+)
 ```
 
 Variables that appear on the right-hand side of a mathematical formulation move to the left with a negated
@@ -77,7 +82,7 @@ terms = pl.concat(
     ],
     how="vertical_relaxed",
 )
-grb(terms).add_constrs(model, by="group", sense=">=", rhs=0.0, name="moq")
+grb(terms).add_constrs(model, by="group", sense=">=", rhs=0.0, coef="coef", name="moq")
 ```
 
 !!! tip "Index dtypes"

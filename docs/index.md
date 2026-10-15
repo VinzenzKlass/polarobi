@@ -46,7 +46,7 @@ model.ModelSense = gp.GRB.MAXIMIZE
 # One binary variable per order and factory, worth the order's value.
 x = grb(orders).add_vars(model, by=["order", "factory"], vtype="B", obj="value", name="x")
 # Each order is made at most once, and no factory exceeds its capacity.
-grb(x).add_constrs(model, by="order", sense="<=", rhs=1.0, coef=1.0, name="assign")
+grb(x).add_constrs(model, by="order", sense="<=", rhs=1.0, name="assign")
 grb(x).add_constrs(
     model, capacity, by="factory", sense="<=", rhs="capacity", coef="quantity", name="cap"
 )

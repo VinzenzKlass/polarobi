@@ -57,15 +57,16 @@ class GurobiFrame:
         rhs: IntoColumn = 0.0,
         name: str | pl.Expr | None = None,
         var: str = "idx",
-        coef: IntoColumn = "coef",
+        coef: IntoColumn = 1.0,
         drop_empty: bool = True,
         idx: str = "idx",
     ) -> pl.DataFrame:
         """
         Add one linear constraint per group of this frame's terms, `sum(coef * x[var]) <sense> rhs`.
 
-        This frame holds one row per term: the group keys `by`, the variable index `var` and its
-        `coef`. `rows` holds one row per constraint with the keys `by`, against which `sense`,
+        This frame holds one row per term: the group keys `by` and the variable index `var`.
+        `coef` is a scalar, a column name, an expression or a Series; it defaults to 1, as in
+        `quicksum`. `rows` holds one row per constraint with the keys `by`, against which `sense`,
         `rhs` and `name` are evaluated; it defaults to the distinct keys of the terms, in order of
         appearance. Constraints keep the order of `rows` and terms their order in this frame, so
         equal inputs build identical models. Rows without terms are dropped unless `drop_empty`

@@ -75,7 +75,7 @@ First, every order is assigned at most once. Grouping `x` by `order` gives one c
 coefficient of 1 for each of its variables:
 
 ```python
-assign = grb(x).add_constrs(model, by="order", sense="<=", rhs=1.0, coef=1.0, name="assign")
+assign = grb(x).add_constrs(model, by="order", sense="<=", rhs=1.0, name="assign")
 ```
 
 Second, no factory exceeds its capacity. Here the right-hand side differs per constraint, so we pass `capacity` as

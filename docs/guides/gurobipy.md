@@ -57,7 +57,7 @@ terms = pl.concat(
     ],
     how="vertical_relaxed",
 )
-grb(terms).add_constrs(model, by=[], sense="<=", rhs=max_air, name="air_limit")
+grb(terms).add_constrs(model, by=[], sense="<=", rhs=max_air, coef="coef", name="air_limit")
 ```
 
 !!! note "Pending elements"
