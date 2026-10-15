@@ -17,11 +17,6 @@ polarobi requires Python 3.12 or higher.
     ```shell
     poetry add polarobi
     ```
-
-!!! warning "Not on PyPI yet"
-    polarobi is not published yet. Until it is, build it [from source](#building-from-source).
-
-
 ### Dependencies
 
 polarobi has just two dependencies:
