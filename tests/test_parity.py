@@ -119,7 +119,7 @@ def test_repeated_variables_sum_left_to_right() -> None:
     terms = pl.DataFrame(
         {"g": ["a"] * 17, "idx": [0] * 13 + [1, 1, 1, 0], "coef": [0.0] * 13 + [*repeated, 0.0]}
     )
-    spec = AddConstrs(terms, ("g",), "<=")
+    spec = AddConstrs(terms, ("g",), "<=", coef="coef")
     with gp.Model(env=_ENV) as polarobi_model, gp.Model(env=_ENV) as gurobipy_model:
         for model in (polarobi_model, gurobipy_model):
             model.addVars(2)

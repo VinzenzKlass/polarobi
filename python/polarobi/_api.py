@@ -77,7 +77,7 @@ def add_constrs(
     rhs: IntoColumn = 0.0,
     name: str | pl.Expr | None = None,
     var: str = "idx",
-    coef: IntoColumn = "coef",
+    coef: IntoColumn = 1.0,
     drop_empty: bool = True,
     idx: str = "idx",
 ) -> pl.DataFrame:

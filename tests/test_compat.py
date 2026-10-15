@@ -106,7 +106,7 @@ def test_terms_order_and_multichunk(model: gp.Model) -> None:
     x = _keys.grb.add_vars(model)
     terms = pl.concat([x.head(2), x.tail(3)], rechunk=False).with_columns(coef=pl.lit(2.0))
     assert terms.n_chunks() > 1
-    rows = terms.grb.add_constrs(model, by="v", sense="=", rhs=1.0)
+    rows = terms.grb.add_constrs(model, by="v", sense="=", rhs=1.0, coef="coef")
     model.update()
     assert rows.get_column("v").to_list() == ["A", "B", "C"]
     assert [model.getRow(c).size() for c in rows.grb.handles(model, kind="constr")] == [2, 2, 1]
