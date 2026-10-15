@@ -1,0 +1,65 @@
+[project]
+name = "polarobi"
+description = "Build gurobipy models from polars frames, passing Arrow memory straight to Gurobi's C API."
+readme = "README.md"
+requires-python = ">=3.12"
+dynamic = ["version"]
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+]
+dependencies = [
+    "gurobipy>=14.0.0b1,<14.1",
+    "polars>=2.0.0",
+]
+[dependency-groups]
+dev = [
+    "maturin>=1.15.0",
+    "prek>=0.5.5",
+    "ruff>=0.17.0",
+    "basedpyright>=1.40.2",
+    "pytest>=9.1.1",
+    "hypothesis>=6.169.4",
+    # Type checking only: polars' annotations reference numpy types, which are Unknown without
+    # it. polarobi itself never imports numpy, tests/test_no_numpy.py guards that.
+    "numpy>=2.0",
+]
+
+[build-system]
+requires = ["maturin>=1.15.0"]
+build-backend = "maturin"
+
+
+[tool.maturin]
+python-source = "python"
+module-name = "polarobi._native"
+
+[tool.uv]
+# Rebuild the extension whenever the Rust sources change.
+cache-keys = [{ file = "pyproject.toml" }, { file = "Cargo.toml" }, { file = "src/**/*.rs" }]
+
+[tool.pyright]
+typeCheckingMode = "strict"
+reportUnusedCallResult = false
+reportExplicitAny = false
+reportAny = false
+reportMissingTypeStubs = false
+
+[tool.ruff]
+line-length = 100
+respect-gitignore = false
+fix = true
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["E", "F", "B", "I"]
+fixable = ["ALL"]
+unfixable = []
+[tool.ruff.format]
+skip-magic-trailing-comma = true
+
+[tool.ruff.lint.isort]
+split-on-trailing-comma = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+target/
+build/
+
+# Local Debug Files
+**/debug.py
+**/*.csv
+**/*.parquet
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# Environment variables
+.env
+*.env
+*.iml
+
+# IDE
+.vscode/
+.idea/
+.zed/
+*.swp
+*.swo
+
+# GCP
+.gcloud/
+
+# Gurobi
+gurobi.log
+*.mps
+*.lp
+*.sol
+
+# OS
+.DS_Store
+Thumbs.db
