@@ -21,4 +21,5 @@ jobs:
       - name: Install Dependencies
         run: uv sync --dev --locked
       - name: Run Tests
-        run: uv run python -m pytest tests/
+        # The statistics show how many examples each Hypothesis test ran under the ci profile.
+        run: uv run python -m pytest tests/ --hypothesis-show-statistics

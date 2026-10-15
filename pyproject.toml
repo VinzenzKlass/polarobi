@@ -2,6 +2,8 @@
 name = "polarobi"
 description = "Build gurobipy models from polars frames, passing Arrow memory straight to Gurobi's C API."
 readme = "README.md"
+license = "Apache-2.0"
+authors = [{ name = "Vinzenz Klass", email = "vinzenz.klass@valantic.com" }]
 requires-python = ">=3.12"
 dynamic = ["version"]
 classifiers = [
@@ -26,6 +28,11 @@ dev = [
     "zensical>=0.0.70",
     "mkdocstrings[python]>=1.0.7",
 ]
+
+[project.urls]
+Homepage = "https://vinzenzklass.github.io/polarobi/"
+Repository = "https://github.com/VinzenzKlass/polarobi"
+Documentation = "https://github.com/VinzenzKlass/polarobi"
 
 [build-system]
 requires = ["maturin>=1.15.0"]
