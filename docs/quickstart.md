@@ -41,11 +41,7 @@ the margin it earns, computed by a polars expression.
 
 ```python
 x = grb(orders).add_vars(
-    model,
-    by=["order", "factory"],
-    vtype="B",
-    obj=pl.col("quantity") * pl.col("margin"),
-    name="x",
+    model, by=["order", "factory"], vtype="B", obj=pl.col("quantity") * pl.col("margin"), name="x"
 )
 ```
 

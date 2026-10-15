@@ -40,7 +40,8 @@ object per variable.
 
 ```python
 shipped = (
-    grb(x).get(model, "X")
+    grb(x)
+    .get(model, "X")
     .filter(pl.col("X") > 0.5)
     .join(orders, on="order")
     .group_by("factory", maintain_order=True)

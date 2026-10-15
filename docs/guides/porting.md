@@ -20,9 +20,7 @@ penalty, and a maximum quantity. Vendor weeks without any demand get no constrai
 === "gurobipy"
     ```python
     keys = ("vendor_code", "ex_go_date")
-    x = model.addVars(
-        demand.select("order", *keys).iter_rows(), vtype=gp.GRB.BINARY, name="x"
-    )
+    x = model.addVars(demand.select("order", *keys).iter_rows(), vtype=gp.GRB.BINARY, name="x")
     breach = model.addVars(capacity.select(*keys).iter_rows(), name="breach")
 
     exprs = {}
