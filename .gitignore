@@ -3,6 +3,8 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
+# Debug symbols of the extension on Windows, from maturin develop
+*.pdb
 .Python
 *.egg-info/
 dist/

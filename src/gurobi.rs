@@ -38,8 +38,13 @@ pub struct Api {
         *const c_double,
         *const *const c_char,
     ) -> c_int,
-    pub getdblattrlist:
-        unsafe extern "C" fn(*mut GrbModel, *const c_char, c_int, *const c_int, *mut c_double) -> c_int,
+    pub getdblattrlist: unsafe extern "C" fn(
+        *mut GrbModel,
+        *const c_char,
+        c_int,
+        *const c_int,
+        *mut c_double,
+    ) -> c_int,
     pub setdblattrlist: unsafe extern "C" fn(
         *mut GrbModel,
         *const c_char,
@@ -47,10 +52,20 @@ pub struct Api {
         *const c_int,
         *const c_double,
     ) -> c_int,
-    pub getintattrlist:
-        unsafe extern "C" fn(*mut GrbModel, *const c_char, c_int, *const c_int, *mut c_int) -> c_int,
-    pub setintattrlist:
-        unsafe extern "C" fn(*mut GrbModel, *const c_char, c_int, *const c_int, *const c_int) -> c_int,
+    pub getintattrlist: unsafe extern "C" fn(
+        *mut GrbModel,
+        *const c_char,
+        c_int,
+        *const c_int,
+        *mut c_int,
+    ) -> c_int,
+    pub setintattrlist: unsafe extern "C" fn(
+        *mut GrbModel,
+        *const c_char,
+        c_int,
+        *const c_int,
+        *const c_int,
+    ) -> c_int,
     getenv: unsafe extern "C" fn(*mut GrbModel) -> *mut GrbEnv,
     geterrormsg: unsafe extern "C" fn(*mut GrbEnv) -> *const c_char,
     version: unsafe extern "C" fn(*mut c_int, *mut c_int, *mut c_int),
@@ -107,9 +122,16 @@ impl Api {
         }
         let msg = unsafe {
             let msg = (self.geterrormsg)((self.getenv)(model));
-            if msg.is_null() { String::new() } else { CStr::from_ptr(msg).to_string_lossy().into_owned() }
+            if msg.is_null() {
+                String::new()
+            } else {
+                CStr::from_ptr(msg).to_string_lossy().into_owned()
+            }
         };
-        let err = py.import("gurobipy")?.getattr("GurobiError")?.call1((rc, msg))?;
+        let err = py
+            .import("gurobipy")?
+            .getattr("GurobiError")?
+            .call1((rc, msg))?;
         Err(PyErr::from_value(err))
     }
 }

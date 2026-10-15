@@ -28,7 +28,8 @@ fn model_ptr(cmodel: &Bound<'_, PyAny>) -> PyResult<*mut GrbModel> {
 }
 
 fn c_int_len(name: &str, n: usize) -> PyResult<c_int> {
-    c_int::try_from(n).map_err(|_| PyValueError::new_err(format!("too many {name} for one call: {n}")))
+    c_int::try_from(n)
+        .map_err(|_| PyValueError::new_err(format!("too many {name} for one call: {n}")))
 }
 
 fn opt_ptr<T: Clone>(values: &Option<Cow<'_, [T]>>) -> *const T {
@@ -36,7 +37,9 @@ fn opt_ptr<T: Clone>(values: &Option<Cow<'_, [T]>>) -> *const T {
 }
 
 fn name_ptrs(names: &Option<Vec<CString>>) -> Option<Vec<*const c_char>> {
-    names.as_ref().map(|names| names.iter().map(|s| s.as_ptr()).collect())
+    names
+        .as_ref()
+        .map(|names| names.iter().map(|s| s.as_ptr()).collect())
 }
 
 #[pyfunction]
@@ -52,11 +55,26 @@ pub fn add_vars(
     names: Option<PyChunkedArray>,
 ) -> PyResult<()> {
     let (api, model) = (api()?, model_ptr(cmodel)?);
-    let obj = obj.as_ref().map(|c| columns::f64s("obj", c, Some(n))).transpose()?;
-    let lb = lb.as_ref().map(|c| columns::f64s("lb", c, Some(n))).transpose()?;
-    let ub = ub.as_ref().map(|c| columns::f64s("ub", c, Some(n))).transpose()?;
-    let vtype = vtype.as_ref().map(|c| columns::chars("vtype", c, Some(n))).transpose()?;
-    let names = names.as_ref().map(|c| columns::cstrings("names", c, Some(n))).transpose()?;
+    let obj = obj
+        .as_ref()
+        .map(|c| columns::f64s("obj", c, Some(n)))
+        .transpose()?;
+    let lb = lb
+        .as_ref()
+        .map(|c| columns::f64s("lb", c, Some(n)))
+        .transpose()?;
+    let ub = ub
+        .as_ref()
+        .map(|c| columns::f64s("ub", c, Some(n)))
+        .transpose()?;
+    let vtype = vtype
+        .as_ref()
+        .map(|c| columns::chars("vtype", c, Some(n)))
+        .transpose()?;
+    let names = names
+        .as_ref()
+        .map(|c| columns::cstrings("names", c, Some(n)))
+        .transpose()?;
     let names = name_ptrs(&names);
     let rc = unsafe {
         (api.addvars)(
@@ -97,13 +115,18 @@ pub fn add_constrs(
     let mut prev = 0;
     for &beg in cbeg.iter() {
         if beg < prev || beg > cind.len() {
-            return Err(PyValueError::new_err("cbeg must be non-decreasing and within cind"));
+            return Err(PyValueError::new_err(
+                "cbeg must be non-decreasing and within cind",
+            ));
         }
         prev = beg;
     }
     let sense = columns::chars("sense", &sense, Some(n))?;
     let rhs = columns::f64s("rhs", &rhs, Some(n))?;
-    let names = names.as_ref().map(|c| columns::cstrings("names", c, Some(n))).transpose()?;
+    let names = names
+        .as_ref()
+        .map(|c| columns::cstrings("names", c, Some(n)))
+        .transpose()?;
     let names = name_ptrs(&names);
     let (cbeg, cind, cval) = match merge_repeats(&cbeg, &cind, &cval) {
         Some((beg, ind, val)) => (Cow::Owned(beg), Cow::Owned(ind), Cow::Owned(val)),
@@ -136,13 +159,19 @@ fn merge_repeats(cbeg: &[usize], cind: &[c_int], cval: &[f64]) -> Option<Csr> {
     }
     let width = cind.iter().map(|&v| v as usize + 1).max().unwrap_or(0);
     let rows = || {
-        let ends = cbeg.iter().skip(1).copied().chain(std::iter::once(cind.len()));
+        let ends = cbeg
+            .iter()
+            .skip(1)
+            .copied()
+            .chain(std::iter::once(cind.len()));
         cbeg.iter().copied().zip(ends)
     };
     // `seen[v]` is the last row that used column `v`, offset by one so zero means none.
     let mut seen = vec![0usize; width];
     let repeats = rows().enumerate().any(|(row, (start, end))| {
-        cind[start..end].iter().any(|&v| std::mem::replace(&mut seen[v as usize], row + 1) == row + 1)
+        cind[start..end]
+            .iter()
+            .any(|&v| std::mem::replace(&mut seen[v as usize], row + 1) == row + 1)
     });
     if !repeats {
         return None;
@@ -183,7 +212,12 @@ impl ArrowArray {
         py: Python<'py>,
         requested_schema: Option<Bound<'py, PyCapsule>>,
     ) -> PyResult<Bound<'py, PyTuple>> {
-        Ok(to_array_pycapsules(py, self.field.clone(), &self.array, requested_schema)?)
+        Ok(to_array_pycapsules(
+            py,
+            self.field.clone(),
+            &self.array,
+            requested_schema,
+        )?)
     }
 }
 
@@ -191,18 +225,27 @@ impl ArrowArray {
 /// backs the returned Float64 array, or Int32 array if `int` is set.
 #[pyfunction]
 #[pyo3(signature = (cmodel, attr, ind, int=false))]
-pub fn get_attr(cmodel: &Bound<'_, PyAny>, attr: &str, ind: PyChunkedArray, int: bool) -> PyResult<ArrowArray> {
+pub fn get_attr(
+    cmodel: &Bound<'_, PyAny>,
+    attr: &str,
+    ind: PyChunkedArray,
+    int: bool,
+) -> PyResult<ArrowArray> {
     let (api, model, py) = (api()?, model_ptr(cmodel)?, cmodel.py());
     let ind = columns::indices("ind", &ind, None)?;
     let len = c_int_len("elements", ind.len())?;
     let name = CString::new(attr)?;
     let (rc, array): (c_int, ArrayRef) = if int {
         let mut out = vec![0; ind.len()];
-        let rc = unsafe { (api.getintattrlist)(model, name.as_ptr(), len, ind.as_ptr(), out.as_mut_ptr()) };
+        let rc = unsafe {
+            (api.getintattrlist)(model, name.as_ptr(), len, ind.as_ptr(), out.as_mut_ptr())
+        };
         (rc, Arc::new(Int32Array::from(out)))
     } else {
         let mut out = vec![0.0; ind.len()];
-        let rc = unsafe { (api.getdblattrlist)(model, name.as_ptr(), len, ind.as_ptr(), out.as_mut_ptr()) };
+        let rc = unsafe {
+            (api.getdblattrlist)(model, name.as_ptr(), len, ind.as_ptr(), out.as_mut_ptr())
+        };
         (rc, Arc::new(Float64Array::from(out)))
     };
     api.check(py, model, rc)?;
@@ -213,7 +256,12 @@ pub fn get_attr(cmodel: &Bound<'_, PyAny>, attr: &str, ind: PyChunkedArray, int:
 /// Set attribute `attr` for the elements at `ind`. Float64 values use the double API, Int32
 /// values the int API.
 #[pyfunction]
-pub fn set_attr(cmodel: &Bound<'_, PyAny>, attr: &str, ind: PyChunkedArray, values: PyChunkedArray) -> PyResult<()> {
+pub fn set_attr(
+    cmodel: &Bound<'_, PyAny>,
+    attr: &str,
+    ind: PyChunkedArray,
+    values: PyChunkedArray,
+) -> PyResult<()> {
     let (api, model, py) = (api()?, model_ptr(cmodel)?, cmodel.py());
     let ind = columns::indices("ind", &ind, None)?;
     let len = c_int_len("elements", ind.len())?;
@@ -221,11 +269,15 @@ pub fn set_attr(cmodel: &Bound<'_, PyAny>, attr: &str, ind: PyChunkedArray, valu
     let rc = match values.field().data_type() {
         arrow_schema::DataType::Int32 => {
             let values = columns::indices("values", &values, Some(ind.len()))?;
-            unsafe { (api.setintattrlist)(model, name.as_ptr(), len, ind.as_ptr(), values.as_ptr()) }
+            unsafe {
+                (api.setintattrlist)(model, name.as_ptr(), len, ind.as_ptr(), values.as_ptr())
+            }
         }
         _ => {
             let values = columns::f64s("values", &values, Some(ind.len()))?;
-            unsafe { (api.setdblattrlist)(model, name.as_ptr(), len, ind.as_ptr(), values.as_ptr()) }
+            unsafe {
+                (api.setdblattrlist)(model, name.as_ptr(), len, ind.as_ptr(), values.as_ptr())
+            }
         }
     };
     api.check(py, model, rc)

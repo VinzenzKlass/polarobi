@@ -20,5 +20,13 @@ repos = [
         hooks = [
             { id = "basedpyright", pass_filenames = false, always_run = true, args = ["--threads", "8"], priority = 0 }
         ]
+    },
+    {
+        # The Rust extension. Uses the rustup toolchain on PATH, with its rustfmt and clippy components.
+        repo = "local",
+        hooks = [
+            { id = "cargo-fmt", name = "cargo fmt", entry = "cargo fmt --all", language = "system", types = ["rust"], pass_filenames = false, priority = 0 },
+            { id = "cargo-clippy", name = "cargo clippy", entry = "cargo clippy --all-targets --locked -- -D warnings", language = "system", files = '^(src/.*\.rs|Cargo\.(toml|lock))$', pass_filenames = false, priority = 1 }
+        ]
     }
 ]
