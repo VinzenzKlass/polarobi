@@ -1,6 +1,6 @@
 [package]
 name = "polarobi"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "Add Gurobi variables and constraints straight from Arrow/polars memory, compatible with gurobipy."
 
