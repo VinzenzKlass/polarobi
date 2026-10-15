@@ -5,6 +5,10 @@ Several independent views are compared, so that a difference shows up in a reada
 nothing slips through any single one of them: model attributes including Gurobi's `Fingerprint`,
 every variable and constraint attribute that defines the model, the matrix row by row, the MPS
 file Gurobi writes, and gurobipy's Python-side bookkeeping of the handles.
+
+Elements and rows are read from copies of the models. `Model.copy()` copies the model inside
+Gurobi and gurobipy rebuilds the copy's handles from scratch, so these reads do not depend on the
+handles polarobi registered. Those are checked on their own.
 """
 
 import tempfile
@@ -35,14 +39,13 @@ def assert_identical(native: gp.Model, reference: gp.Model) -> None:
     for attr in _MODEL_ATTRS:
         got, want = native.getAttr(attr), reference.getAttr(attr)
         assert got == want, f"model attribute {attr}: {got!r} != {want!r}"
-    _assert_elements(
-        "variable", native, native.getVars(), reference, reference.getVars(), _VAR_ATTRS
-    )
-    _assert_elements(
-        "constraint", native, native.getConstrs(), reference, reference.getConstrs(), _CONSTR_ATTRS
-    )
-    _assert_sequence("matrix row", _rows(native), _rows(reference))
     assert _mps(native) == _mps(reference), "written MPS files differ"
+    with native.copy() as got, reference.copy() as want:
+        _assert_elements("variable", got, got.getVars(), want, want.getVars(), _VAR_ATTRS)
+        _assert_elements(
+            "constraint", got, got.getConstrs(), want, want.getConstrs(), _CONSTR_ATTRS
+        )
+        _assert_sequence("matrix row", _rows(got), _rows(want))
     _assert_bookkeeping(native, reference)
 
 
@@ -88,11 +91,12 @@ def _mps(model: gp.Model) -> bytes:
 def _assert_bookkeeping(native: gp.Model, reference: gp.Model) -> None:
     # gurobipy's own view of the model must match what Gurobi holds, through the same private
     # state that polarobi updates when it registers handles.
-    for kind, elements, pool, live in (
-        ("variable", native.getVars(), native._internal_vars, native._livevars),
-        ("constraint", native.getConstrs(), native._constrs, native._liveconstrs),
+    for kind, count, pool, live in (
+        ("variable", native.NumVars, native._internal_vars, native._livevars),
+        ("constraint", native.NumConstrs, native._constrs, native._liveconstrs),
     ):
-        assert [e.index for e in elements] == list(range(len(elements))), f"{kind} indices"
-        assert len(pool) == len(elements) == live, f"gurobipy {kind} bookkeeping"
+        assert len(pool) == count == live, f"gurobipy {kind} bookkeeping"
+        for position, handle in enumerate(pool):
+            assert handle.index == position, f"{kind} handle {position}"
     assert native._livevars == reference._livevars
     assert native._liveconstrs == reference._liveconstrs

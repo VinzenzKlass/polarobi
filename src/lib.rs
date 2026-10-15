@@ -1,5 +1,6 @@
 mod columns;
 mod gurobi;
+mod handles;
 mod model;
 
 use pyo3::prelude::*;
@@ -12,5 +13,6 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(model::add_constrs, m)?)?;
     m.add_function(wrap_pyfunction!(model::get_attr, m)?)?;
     m.add_function(wrap_pyfunction!(model::set_attr, m)?)?;
+    m.add_function(wrap_pyfunction!(handles::register, m)?)?;
     Ok(())
 }

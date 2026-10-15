@@ -113,5 +113,5 @@ variable's plain name.
 ## Large Frames
 
 `add_vars` passes numeric columns to Gurobi without copying them and makes a single call into Gurobi for the whole
-frame. What remains per variable is creating its gurobipy handle, about 2 µs, which `Model.addVars` pays as well.
-See [How it Works](../concepts/how_it_works.md) for the details.
+frame. What remains per variable is creating its gurobipy handle, which `Model.addVars` pays as well.
+[How it Works](../concepts/how_it_works.md) has the details.

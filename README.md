@@ -44,8 +44,8 @@ See [Type Checking](docs/installation.md#type-checking) for why.
   Names are copied, since C needs NUL-terminated strings.
 - New columns and rows are registered with gurobipy as `gp.Var(cmodel, i)` / `gp.Constr(cmodel, i)`
   handles in `Model._internal_vars` / `Model._constrs`. That is what keeps `getVars`,
-  `getVarByName`, mixed expressions, `remove`, `copy` and friends working. Creating the handles
-  costs about 2 µs each, the same as in `addVars`.
+  `getVarByName`, mixed expressions, `remove`, `copy` and friends working. The handles are created
+  in Rust, at about half the cost of a Python loop over gurobipy's handle constructor.
 - Constraint and term order follow the input frames, so equal inputs build models with equal
   `Fingerprint`s.
 

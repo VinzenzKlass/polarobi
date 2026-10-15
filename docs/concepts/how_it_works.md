@@ -68,9 +68,10 @@ functions, such as `getVars()` and `getVarByName()`, read from that list. Elemen
 in the model but invisible to those functions.
 
 So after each call, polarobi creates the gurobipy handles for the new elements and registers them exactly as
-gurobipy registers its own. The handles are created in Python and cost about 2 µs each, the same as in
-`Model.addVars`. They are the reason a variable family still takes time proportional to its size, and the price of
-full compatibility with gurobipy.
+gurobipy registers its own. The native module creates them, which takes about half the time of a Python loop over
+gurobipy's handle constructor; the constructor itself is gurobipy's and costs what it costs in `Model.addVars`. The
+handles are the reason a variable family still takes time proportional to its size, and the price of full
+compatibility with gurobipy.
 
 This relies on private parts of gurobipy:
 

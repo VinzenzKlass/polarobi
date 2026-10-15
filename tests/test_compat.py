@@ -130,5 +130,5 @@ def test_errors(model: gp.Model) -> None:
 
 
 def test_stub_matches_runtime_namespace() -> None:
-    # The `DataFrame.grb` stub claims `GurobiFrame`; the runtime-registered namespace must be it.
+    # `grb(df)` relies on the runtime-registered namespace being `GurobiFrame`.
     assert type(pl.DataFrame({"k": [1]}).grb) is polarobi.GurobiFrame

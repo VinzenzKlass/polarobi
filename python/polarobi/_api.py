@@ -10,13 +10,13 @@ Where gurobipy has an equivalent call, the result matches it exactly, down to na
 zeros; `tests/test_equivalence.py` checks that against plain gurobipy.
 """
 
-from collections.abc import Callable, Sequence
-from typing import Any, Literal, cast
+from collections.abc import Sequence
+from typing import Any, Literal
 
 import gurobipy as gp
 import polars as pl
 
-from polarobi import _native
+from polarobi import _handles, _native
 
 type IntoColumn = pl.Series | pl.Expr | str | float | int
 type Sense = Literal["<", "<=", ">", ">=", "=", "=="]
@@ -33,10 +33,6 @@ _ROW = "__polarobi_row"
 _INDEX_TYPES = (pl.Int32, pl.UInt32)
 # gurobipy reports values at or beyond Gurobi's infinity as Python infinities.
 _INFINITY = gp.GRB.INFINITY
-
-# gurobipy's stubs hide the handle constructors `Var(cmodel, colno)` and `Constr(cmodel, rowno)`.
-_Var = cast(Callable[[object, int], gp.Var], gp.Var)
-_Constr = cast(Callable[[object, int], gp.Constr], gp.Constr)
 
 
 def add_vars(
@@ -66,9 +62,7 @@ def add_vars(
         vtype=None if vtype is None else pl.repeat(ord(vtype), n, dtype=pl.UInt8, eager=True),
         names=_names(keys, name, by),
     )
-    cmodel = model._cmodel
-    model._internal_vars.extend([_Var(cmodel, i) for i in range(start, start + n)])
-    model._livevars += n
+    _handles.register(model, "var", start, n)
     return keys.with_columns(_index(start, n).alias(idx))
 
 
@@ -125,9 +119,7 @@ def add_constrs(
         rows.get_column(_ROW + "rhs"),
         names=None if names is None else rows.get_column(_ROW + "name"),
     )
-    cmodel = model._cmodel
-    model._constrs.extend([_Constr(cmodel, i) for i in range(start, start + n)])
-    model._liveconstrs += n
+    _handles.register(model, "constr", start, n)
     hidden = [c for c in rows.columns if c.startswith(_ROW)]
     return rows.drop(hidden).with_columns(_index(start, n).alias(idx))
 
