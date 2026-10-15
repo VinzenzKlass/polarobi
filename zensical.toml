@@ -1,0 +1,85 @@
+[project]
+site_name = "polarobi"
+site_description = "Build gurobipy models from polars frames, passing Arrow memory straight to Gurobi's C API."
+watch = ["python/polarobi"]
+extra_css = ["css/styles.css"]
+extra_javascript = ["js/highlight.min.js"]
+
+nav = [
+    { "Home" = "index.md" },
+    { "Getting Started" = [
+        { "Installation" = "installation.md" },
+        { "Quick Start" = "quickstart.md" },
+    ] },
+    { "Guides" = [
+        { "Index" = "guides/index.md" },
+        { "Variables" = "guides/variables.md" },
+        { "Constraints" = "guides/constraints.md" },
+        { "Attributes & Results" = "guides/attributes.md" },
+        { "Working with gurobipy" = "guides/gurobipy.md" },
+        { "Porting a gurobipy Model" = "guides/porting.md" },
+    ] },
+    { "Concepts" = [
+        { "How it Works" = "concepts/how_it_works.md" },
+        { "Equivalence with gurobipy" = "concepts/equivalence.md" },
+    ] },
+    { "API Reference" = [
+        { "DataFrame.grb" = "api/namespace.md" },
+    ] },
+]
+
+[project.theme]
+custom_dir = "docs/overrides"
+features = [
+    "content.code.copy",
+    "content.tabs.link",
+    "search.suggest",
+    "navigation.instant",
+    "navigation.tabs",
+    "navigation.top",
+]
+
+[project.theme.icon]
+logo = "material/vector-polyline"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+primary = "custom"
+toggle.icon = "material/lightbulb"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+primary = "custom"
+toggle.icon = "material/lightbulb-outline"
+toggle.name = "Switch to light mode"
+
+[project.markdown_extensions]
+admonition = { }
+attr_list = { }
+md_in_html = { }
+pymdownx.details = { }
+pymdownx.highlight.use_pygments = false
+pymdownx.superfences = { }
+pymdownx.tabbed.alternate_style = true
+
+[project.plugins.search]
+lang = "en"
+
+[project.plugins.minify]
+minify_html = true
+
+[project.plugins.mkdocstrings.handlers.python]
+paths = ["python"]
+options.docstring_style = "google"
+options.group_by_category = false
+options.line_length = 80
+options.members_order = "source"
+options.separate_signature = true
+options.show_bases = false
+options.show_signature_annotations = true
+options.show_source = false
+options.show_root_heading = true
+options.show_root_full_path = false

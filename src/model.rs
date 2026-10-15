@@ -105,6 +105,10 @@ pub fn add_constrs(
     let rhs = columns::f64s("rhs", &rhs, Some(n))?;
     let names = names.as_ref().map(|c| columns::cstrings("names", c, Some(n))).transpose()?;
     let names = name_ptrs(&names);
+    let (cbeg, cind, cval) = match merge_repeats(&cbeg, &cind, &cval) {
+        Some((beg, ind, val)) => (Cow::Owned(beg), Cow::Owned(ind), Cow::Owned(val)),
+        None => (cbeg, cind, cval),
+    };
     let rc = unsafe {
         (api.xaddconstrs)(
             model,
@@ -119,6 +123,48 @@ pub fn add_constrs(
         )
     };
     api.check(cmodel.py(), model, rc)
+}
+
+type Csr = (Vec<usize>, Vec<c_int>, Vec<f64>);
+
+/// gurobipy accepts a variable more than once per row and sums its coefficients left to right,
+/// while Gurobi's bulk call rejects repeats. Merge them the same way; `None` if there are none.
+/// Gurobi itself then drops coefficients that are zero or tiny, for either path alike.
+fn merge_repeats(cbeg: &[usize], cind: &[c_int], cval: &[f64]) -> Option<Csr> {
+    if cind.iter().any(|&v| v < 0) {
+        return None; // Gurobi reports the invalid index.
+    }
+    let width = cind.iter().map(|&v| v as usize + 1).max().unwrap_or(0);
+    let rows = || {
+        let ends = cbeg.iter().skip(1).copied().chain(std::iter::once(cind.len()));
+        cbeg.iter().copied().zip(ends)
+    };
+    // `seen[v]` is the last row that used column `v`, offset by one so zero means none.
+    let mut seen = vec![0usize; width];
+    let repeats = rows().enumerate().any(|(row, (start, end))| {
+        cind[start..end].iter().any(|&v| std::mem::replace(&mut seen[v as usize], row + 1) == row + 1)
+    });
+    if !repeats {
+        return None;
+    }
+    seen.fill(0);
+    let mut slot = vec![0usize; width];
+    let (mut beg, mut ind, mut val) = (Vec::with_capacity(cbeg.len()), Vec::new(), Vec::new());
+    for (row, (start, end)) in rows().enumerate() {
+        beg.push(ind.len());
+        for (&v, &coef) in cind[start..end].iter().zip(&cval[start..end]) {
+            let column = v as usize;
+            if seen[column] == row + 1 {
+                val[slot[column]] += coef;
+            } else {
+                seen[column] = row + 1;
+                slot[column] = ind.len();
+                ind.push(v);
+                val.push(coef);
+            }
+        }
+    }
+    Some((beg, ind, val))
 }
 
 /// An Arrow array handed to Python through the Arrow PyCapsule interface, which polars imports

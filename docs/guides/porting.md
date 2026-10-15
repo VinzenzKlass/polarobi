@@ -1,0 +1,107 @@
+---
+title: Porting a gurobipy Model
+description: Moving a gurobipy model built from polars frames to polarobi.
+---
+
+A common way to build gurobipy models from polars data is to iterate: `iter_rows()` into `addVars`, `group_by().agg()`
+into dicts of `LinExpr`, and a loop of `addLConstr` calls. polarobi replaces each of those steps with a frame
+operation. This guide shows the translation on a typical capacity constraint, then lists the patterns one by one.
+
+!!! tip "Port one family at a time"
+    polarobi and gurobipy work on the same model, so you can port a model family by family and compare the result
+    after each step. [Working with gurobipy](gurobipy.md) covers mixing both.
+
+
+## An Example
+
+Demand rows are assigned to vendors per week. Each vendor week has a minimum quantity, which may be breached at a
+penalty, and a maximum quantity. Vendor weeks without any demand get no constraints.
+
+=== "gurobipy"
+    ```python
+    keys = ("vendor_code", "ex_go_date")
+    x = model.addVars(
+        demand.select("order", *keys).iter_rows(), vtype=gp.GRB.BINARY, name="x"
+    )
+    breach = model.addVars(capacity.select(*keys).iter_rows(), name="breach")
+
+    exprs = {}
+    for v, w, orders, quantities in demand.group_by(keys).agg("order", "quantity").iter_rows():
+        exprs[v, w] = gp.LinExpr(quantities, [x[o, v, w] for o in orders])
+
+    for v, w, min_qty, max_qty in capacity.select(*keys, "min_qty", "max_qty").iter_rows():
+        if (expr := exprs.get((v, w))) is None:
+            continue
+        model.addLConstr(expr + breach[v, w] >= min_qty, name=f"min[{v},{w}]")
+        model.addLConstr(expr <= max_qty, name=f"max[{v},{w}]")
+    ```
+
+=== "polarobi"
+    ```python
+    keys = ["vendor_code", "ex_go_date"]
+    x = demand.grb.add_vars(model, by=["order", *keys], vtype="B", name="x")
+    breach = capacity.grb.add_vars(model, by=keys, name="breach")
+
+    quantity = x.select(*keys, "idx", coef=pl.col("quantity"))
+    # Only vendor weeks with demand get constraints.
+    rows = capacity.join(quantity.select(keys), on=keys, how="semi")
+
+    minimum = pl.concat(
+        [quantity, breach.select(*keys, "idx", coef=pl.lit(1.0))], how="vertical_relaxed"
+    )
+    minimum.grb.add_constrs(model, rows, by=keys, sense=">=", rhs="min_qty", name="min")
+    quantity.grb.add_constrs(model, rows, by=keys, sense="<=", rhs="max_qty", name="max")
+    ```
+
+What changed:
+
+- **Variables** come from the frames directly. `by` names the key columns, and names are formatted from them as
+  `addVars` formats its keys.
+- **Lookups** like `x[o, v, w]` disappear. `x` already carries each variable's `idx` next to its keys, so selecting
+  columns is enough. Where variables and data live in different frames, a join on the keys does the lookup.
+- **Expressions** become terms frames. Adding the breach variable to the quantity expression is a `concat` of the
+  two term frames.
+- **Skipping groups** with `continue` becomes filtering the rows frame. The maximum constraint does not even need
+  that: rows without terms are dropped by default. The minimum constraint does, because the breach term would
+  otherwise make every vendor week non-empty.
+- **The loop** of `addLConstr` calls becomes one `add_constrs` call per family.
+
+The names differ slightly, as polarobi names constraints the way `addConstrs` does: `min[V1,20260101]`. If you
+depend on a particular name format, pass an expression, such as
+`name=pl.concat_str(pl.lit("min_"), "vendor_code", pl.lit("_"), "ex_go_date")`.
+
+
+## Pattern by Pattern
+
+| gurobipy | polarobi |
+|---|---|
+| `model.addVars(df.select(keys).iter_rows(), ...)` | `df.grb.add_vars(model, by=keys, ...)` |
+| `ub=list(caps.values())` | `ub="cap"`, a column of the same frame |
+| `x[(a, b)]` lookups | A join on `a, b` that brings `idx` along |
+| `gp.LinExpr(coefs, [x[k] for k in keys])` | A terms frame with `idx` and `coef` |
+| `quicksum(e1 + e2)` across families | `pl.concat([terms1, terms2], how="vertical_relaxed")` |
+| `expr <= big_m * y` | `y`'s terms with `coef=-big_m`, `rhs=0` |
+| `if not exprs: continue` | Default `drop_empty=True`, or a filtered rows frame |
+| `for row in df.iter_rows(): model.addLConstr(...)` | `terms.grb.add_constrs(model, df, by=keys, ...)` |
+| `y.setAttr("ub", 0)` for some groups | `y.filter(...).grb.set(model, "UB", 0.0)` |
+| `setAttr("BranchPriority", list(y.values()), ...)` | `y.grb.set(model, "BranchPriority", 10)` |
+| `[(k, v.X) for k, v in x.items() if v.X > 0]` | `x.grb.get(model, "X").filter(pl.col("X") > 0)` |
+
+
+## Checking the Port
+
+Two models built from the same data should be identical, not just equally good. Compare them before switching:
+
+```python
+for m in (old_model, new_model):
+    m.update()
+
+assert old_model.NumVars == new_model.NumVars
+assert old_model.NumConstrs == new_model.NumConstrs
+assert old_model.NumNZs == new_model.NumNZs
+assert old_model.Fingerprint == new_model.Fingerprint
+```
+
+`Fingerprint` depends on the order of variables and constraints. If the original model builds its constraints from
+`group_by` or `unique` without `maintain_order=True`, its order changes from run to run, and so does its
+fingerprint. Make the original deterministic first, then compare.

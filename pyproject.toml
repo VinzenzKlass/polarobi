@@ -23,6 +23,8 @@ dev = [
     # Type checking only: polars' annotations reference numpy types, which are Unknown without
     # it. polarobi itself never imports numpy, tests/test_no_numpy.py guards that.
     "numpy>=2.0",
+    "zensical>=0.0.70",
+    "mkdocstrings[python]>=1.0.7",
 ]
 
 [build-system]

@@ -43,3 +43,6 @@ gurobi.log
 # OS
 .DS_Store
 Thumbs.db
+
+# Docs
+site/

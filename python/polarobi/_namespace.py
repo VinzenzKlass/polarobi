@@ -37,8 +37,11 @@ class GurobiFrame:
 
         `lb`, `ub` and `obj` take a scalar, a column name, an expression or a Series; omitted they
         keep Gurobi's defaults (0, infinity, 0). A `name` string names variables gurobipy-style
-        from the key columns `by` (default: all columns), e.g. `x[a,b]`; an expression names them
-        freely.
+        from the key columns `by` (default: all columns), e.g. `x[a,b]`, formatting keys as
+        gurobipy does (`True`, `1e-07`, `None` for nulls); an expression names them freely, a
+        null name leaves a variable unnamed.
+
+        Like `Model.addVars`, raises `KeyError` for duplicate keys, but before adding anything.
         """
         return _api.add_vars(
             model, self._df, by=by, lb=lb, ub=ub, obj=obj, vtype=vtype, name=name, idx=idx
@@ -66,7 +69,12 @@ class GurobiFrame:
         `rhs` and `name` are evaluated; it defaults to the distinct keys of the terms, in order of
         appearance. Constraints keep the order of `rows` and terms their order in this frame, so
         equal inputs build identical models. Rows without terms are dropped unless `drop_empty`
-        is False.
+        is False; a Series for `sense` or `rhs` lines up with `rows` as given. Rows may repeat a
+        key, each then gets all of its terms, as with `Model.addConstrs`. Without key columns
+        (`by=[]`), all terms form a single constraint.
+
+        As in gurobipy, a variable repeated within a row has its coefficients summed left to
+        right, and a right-hand side of -0.0 becomes 0.0.
 
         Returns `rows` with the constraints' row index `idx`.
         """
@@ -92,7 +100,10 @@ class GurobiFrame:
         idx: str = "idx",
         dtype: type[pl.Float64] | type[pl.Int32] = pl.Float64,
     ) -> pl.DataFrame:
-        """This frame with `attr` (e.g. "X", "Pi", "UB") of its variables or constraints added."""
+        """
+        This frame with `attr` (e.g. "X", "Pi", "UB") of its variables or constraints added.
+        Values at Gurobi's infinity read as `inf`, as in gurobipy.
+        """
         values = _api.get_attr(model, attr, self._df.get_column(idx), dtype=dtype)
         return self._df.with_columns(values)
 
