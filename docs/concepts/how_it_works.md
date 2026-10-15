@@ -37,9 +37,9 @@ polarobi keeps the data in polars until it reaches Gurobi. Per row, it creates e
 All of that is polars. The result, three arrays of row offsets, variable indices and coefficients, plus one array
 each of senses and right-hand sides, goes to a single `GRBXaddconstrs` call.
 
-Gurobi's bulk call rejects a variable that appears twice in a row, while gurobipy sums such repeats. Before the
-call, the native module checks for repeats in one pass and, only if there are any, merges them into new arrays the
-way gurobipy does.
+Gurobi rejects a variable that appears twice in a row, while gurobipy sums such repeats first. Before the call, the
+native module checks for repeats in one pass and, only if there are any, merges them into new arrays, summing
+coefficients left to right in the order of the terms frame.
 
 ### Zero Copy
 

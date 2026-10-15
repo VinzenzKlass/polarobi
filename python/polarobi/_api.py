@@ -33,6 +33,7 @@ _ROW = "__polarobi_row"
 _INDEX_TYPES = (pl.Int32, pl.UInt32)
 # gurobipy reports values at or beyond Gurobi's infinity as Python infinities.
 _INFINITY = gp.GRB.INFINITY
+_INDEX_OUT_OF_RANGE = 10006  # GRB_ERROR_INDEX_OUT_OF_RANGE
 
 
 def add_vars(
@@ -109,11 +110,15 @@ def add_constrs(
         _ROW, maintain_order=True
     )
     cbeg = terms.get_column(_ROW).search_sorted(rows.get_column(_ROW), side="left")
+    cind = _indices(terms.get_column(_ROW + "var"))
+    # Gurobi rejects these too, but without saying what is wrong.
+    if cind.len() and not (0 <= _int(cind.min()) and _int(cind.max()) < len(model._internal_vars)):
+        raise gp.GurobiError(_INDEX_OUT_OF_RANGE, f"Variable index in {var!r} out of range")
     n, start = rows.height, len(model._constrs)
     _native.add_constrs(
         model._cmodel,
         cbeg.cast(pl.UInt64),
-        _indices(terms.get_column(_ROW + "var")),
+        cind,
         terms.get_column(_ROW + "coef"),
         rows.get_column(_ROW + "sense"),
         rows.get_column(_ROW + "rhs"),
@@ -208,6 +213,11 @@ def _sync(model: gp.Model) -> None:
 
 def _index(start: int, n: int) -> pl.Expr:
     return pl.int_range(start, start + n, dtype=pl.UInt32)
+
+
+def _int(value: Any) -> int:
+    """A scalar read from an integer Series, which polars types loosely."""
+    return int(value)
 
 
 def _indices(index: pl.Series) -> pl.Series:

@@ -8,11 +8,19 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: 3.14
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
       - uses: astral-sh/setup-uv@v8.2.0
         with:
           enable-cache: true
+      - name: Rust Checks
+        run: |
+          cargo fmt --all --check
+          cargo clippy --all-targets --locked -- -D warnings
       - name: Install Dependencies
-        run: uv sync --dev
+        run: uv sync --dev --locked
       - name: Ruff Checks
         run: |
           uv run ruff check .

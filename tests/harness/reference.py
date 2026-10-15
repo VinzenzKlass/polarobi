@@ -63,7 +63,6 @@ def add_constrs(model: gp.Model, spec: AddConstrs) -> pl.DataFrame:
     # Without key columns every term has the empty key.
     term_keys: list[Key] = list(terms.select(by).iter_rows()) if by else [()] * terms.height
     var_index: list[int] = terms.get_column(spec.var).to_list()
-    term_vars = [columns[i] for i in var_index]
 
     if spec.rows is None:
         # Without keys all terms form one constraint, if there are any.
@@ -84,11 +83,15 @@ def add_constrs(model: gp.Model, spec: AddConstrs) -> pl.DataFrame:
         row_keys = _kept(row_keys, keep)
         senses, rhs, names = _kept(senses, keep), _kept(rhs, keep), _kept(names, keep)
 
-    # Rows may repeat a key; each such row gets all of the key's terms.
-    lhs: dict[Key, list[tuple[float, gp.Var]]] = {key: [] for key in row_keys}
-    for key, coef, var in zip(term_keys, coefs, term_vars, strict=True):
-        if key in lhs:
-            lhs[key].append((coef, var))
+    # Rows may repeat a key; each such row gets all of the key's terms. A variable repeated within
+    # a row is summed left to right, as documented; gurobipy would sum repeats in an order of its
+    # own, an unstable sort that depends on the other terms, which polarobi does not reproduce.
+    summed: dict[Key, dict[int, float]] = {key: {} for key in row_keys}
+    for key, coef, column in zip(term_keys, coefs, var_index, strict=True):
+        if key in summed:
+            row = summed[key]
+            row[column] = row[column] + coef if column in row else coef
+    lhs = {key: [(c, columns[i]) for i, c in row.items()] for key, row in summed.items()}
 
     before = model.NumConstrs
     if isinstance(spec.name, str) and by:

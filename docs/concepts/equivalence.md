@@ -4,9 +4,9 @@ description: What polarobi guarantees about the models it builds, and how that i
 ---
 
 !!! tip "TL;DR"
-    For every operation that gurobipy also offers, polarobi builds exactly the model gurobipy builds: the same
-    variables, constraints, coefficients, names and order, down to signed zeros. Its test suite checks that against
-    gurobipy itself on random inputs.
+For every operation that gurobipy also offers, polarobi builds exactly the model gurobipy builds: the same
+variables, constraints, coefficients, names and order, down to signed zeros. Its test suite checks that against
+gurobipy itself on random inputs.
 
 ## The Guarantee
 
@@ -24,32 +24,33 @@ respect Gurobi exposes:
 Values read with `get` match `Model.getAttr`, and frames returned by polarobi match what the same operation returns
 when written with gurobipy.
 
-
 ## gurobipy's Rules
 
 Matching gurobipy exactly means following some rules that are easy to miss. polarobi implements each of them:
 
-| Situation | gurobipy, and polarobi |
-|---|---|
-| Names from keys | `str()` of each key: `True`, `1e-07`, `None` for nulls |
-| A variable repeated within a constraint | Coefficients summed left to right |
-| A coefficient that is zero or tiny, even after summing | Dropped by Gurobi |
-| A right-hand side of `-0.0` | Becomes `0.0` |
-| A bound of `-0.0` | Kept as `-0.0` |
-| A bound or other value at Gurobi's infinity | Reads as `inf` |
-| Repeated keys in the rows of a constraint family | One constraint per row, with the same name |
-| Repeated keys in a variable family | `KeyError` |
-| Reading attributes of elements awaiting `update()` | `GurobiError` |
-
+| Situation                                              | gurobipy, and polarobi                                 |
+|--------------------------------------------------------|--------------------------------------------------------|
+| Names from keys                                        | `str()` of each key: `True`, `1e-07`, `None` for nulls |
+| A variable repeated within a constraint                | Coefficients summed left to right, see below           |
+| A coefficient that is zero or tiny, even after summing | Dropped by Gurobi                                      |
+| A right-hand side of `-0.0`                            | Becomes `0.0`                                          |
+| A bound of `-0.0`                                      | Kept as `-0.0`                                         |
+| A bound or other value at Gurobi's infinity            | Reads as `inf`                                         |
+| Repeated keys in the rows of a constraint family       | One constraint per row, with the same name             |
+| Repeated keys in a variable family                     | `KeyError`                                             |
+| Reading attributes of elements awaiting `update()`     | `GurobiError`                                          |
 
 ## Where polarobi Differs
 
 - **Failed calls change nothing.** polarobi validates its input before its single call into Gurobi and registers
   handles only after it succeeded. gurobipy, by contrast, raises for duplicate keys in `addVars` only after adding
   the variables.
+- **Repeated variables are summed left to right.** gurobipy sums a variable that repeats within a constraint in
+  the order of an unstable sort, which depends on the row's other terms and has no rule worth reproducing. Where a
+  sum depends on its order, the last bit of the coefficient can differ; polarobi's order is fixed and the same on
+  every platform. The test suite's reference implementation sums repeats left to right as well.
 - **Inputs gurobipy cannot express** have their own rules: a Series of right-hand sides lines up with the rows frame
   as given, and `by=[]` sums all terms into a single constraint.
-
 
 ## How It Is Tested
 
@@ -72,7 +73,6 @@ duplicate keys, reading pending elements and invalid input.
 
 Several of the rules in the table above were found this way: each was a difference between polarobi and gurobipy that
 the state machine turned up and that polarobi now follows.
-
 
 ## Known Limitations
 

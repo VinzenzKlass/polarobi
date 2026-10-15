@@ -150,9 +150,9 @@ pub fn add_constrs(
 
 type Csr = (Vec<usize>, Vec<c_int>, Vec<f64>);
 
-/// gurobipy accepts a variable more than once per row and sums its coefficients left to right,
-/// while Gurobi's bulk call rejects repeats. Merge them the same way; `None` if there are none.
-/// Gurobi itself then drops coefficients that are zero or tiny, for either path alike.
+/// Gurobi rejects a variable that appears more than once in a row. Merge repeats by summing their
+/// coefficients left to right, in the order of the terms; `None` if there are none. Gurobi itself
+/// then drops coefficients that are zero or tiny.
 fn merge_repeats(cbeg: &[usize], cind: &[c_int], cval: &[f64]) -> Option<Csr> {
     if cind.iter().any(|&v| v < 0) {
         return None; // Gurobi reports the invalid index.

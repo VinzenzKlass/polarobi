@@ -73,8 +73,8 @@ class GurobiFrame:
         key, each then gets all of its terms, as with `Model.addConstrs`. Without key columns
         (`by=[]`), all terms form a single constraint.
 
-        As in gurobipy, a variable repeated within a row has its coefficients summed left to
-        right, and a right-hand side of -0.0 becomes 0.0.
+        A variable repeated within a row has its coefficients summed left to right, and a
+        right-hand side of -0.0 becomes 0.0, as in gurobipy.
 
         Returns `rows` with the constraints' row index `idx`.
         """

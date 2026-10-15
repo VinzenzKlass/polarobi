@@ -136,9 +136,13 @@ With `by=[]` there is no rows frame, and a `name` string becomes the constraint'
 
 ## Repeated Variables
 
-A variable may appear more than once in the terms of a constraint. As in gurobipy, its coefficients are summed, left
-to right in the order of the terms frame. Gurobi then drops coefficients that are zero, or so small that they are
-numerically zero, exactly as it does for gurobipy's expressions.
+A variable may appear more than once in the terms of a constraint. Its coefficients are then summed, left to right
+in the order of the terms frame, and Gurobi drops results that are zero or so small that they are numerically zero,
+as it does for gurobipy's expressions.
+
+gurobipy sums repeats too, but in the order of an unstable sort that depends on the row's other terms. Where a sum
+depends on its order, the last bit of the coefficient can therefore differ from a row built with gurobipy.
+polarobi's order is fixed and the same on every platform.
 
 
 ## Names

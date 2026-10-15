@@ -106,3 +106,34 @@ def test_names_match_gurobipy(keys: pl.DataFrame, name: str) -> None:
         assert [v.VarName for v in polarobi_model.getVars()] == [
             v.VarName for v in gurobipy_model.getVars()
         ]
+
+
+def test_repeated_variables_sum_left_to_right() -> None:
+    """
+    Repeats are summed left to right, on every platform. gurobipy sums them in the order of an
+    unstable sort, which depends on the other terms: for this row, right to left.
+    """
+    repeated = [-999999999.0 * 3, -183862175.19652724 * 3, 627515632.0 * 3]
+    left_to_right = (repeated[0] + repeated[1]) + repeated[2]
+    assert left_to_right != repeated[0] + (repeated[1] + repeated[2])
+    terms = pl.DataFrame(
+        {"g": ["a"] * 17, "idx": [0] * 13 + [1, 1, 1, 0], "coef": [0.0] * 13 + [*repeated, 0.0]}
+    )
+    spec = AddConstrs(terms, ("g",), "<=")
+    with gp.Model(env=_ENV) as polarobi_model, gp.Model(env=_ENV) as gurobipy_model:
+        for model in (polarobi_model, gurobipy_model):
+            model.addVars(2)
+        native.add_constrs(polarobi_model, spec)
+        reference.add_constrs(gurobipy_model, spec)
+        assert_identical(polarobi_model, gurobipy_model)
+        row = polarobi_model.getRow(polarobi_model.getConstrs()[0])
+        assert row.size() == 1 and row.getCoeff(0) == left_to_right
+
+
+def test_failed_family_with_repeats_changes_nothing(models: tuple[gp.Model, gp.Model]) -> None:
+    """A family with repeats and an invalid index is rejected as a whole."""
+    terms = pl.DataFrame({"g": ["a", "a", "b"], "idx": [0, 0, 7], "coef": [1.0, 2.0, 1.0]})
+    polarobi_model, untouched = models
+    with pytest.raises(gp.GurobiError):
+        native.add_constrs(polarobi_model, AddConstrs(terms, ("g",), "<"))
+    assert_identical(polarobi_model, untouched)
