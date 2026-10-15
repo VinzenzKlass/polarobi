@@ -109,6 +109,7 @@ Configuration worth knowing:
 | `pyproject.toml`, `[tool.maturin]` | `python-source = "python"`, `module-name = "polarobi._native"`                       |
 | `Cargo.toml`, `[lib]`              | `name = "_native"`, `crate-type = ["cdylib"]`; must match `module-name`              |
 | `Cargo.toml`, `version`            | the package version, which maturin passes to Python (`dynamic = ["version"]`)        |
+| `Cargo.toml`, `pyo3` features      | `abi3-py312`: one wheel per platform for all supported Pythons                       |
 | `Cargo.toml`, `arrow-*`            | must stay on the arrow version `pyo3-arrow` is built on, or their types do not match |
 
 ### Building wheels
@@ -124,8 +125,26 @@ can cross-compile with [zig](https://ziglang.org/):
 uvx maturin build --release --zig --target x86_64-unknown-linux-gnu
 ```
 
-The wheel is tagged for the Python version it was built with. Each supported Python version and platform needs its
-own wheel.
+Wheels use Python's stable ABI (pyo3's `abi3-py312` feature), so one wheel per platform, tagged `cp312-abi3`, works on
+every Python from 3.12 on.
+
+### Releasing
+
+`.github/workflows/release.yml` builds an sdist and one wheel each for Linux x86_64 and aarch64 (manylinux), Windows
+x64 and macOS (`universal2`, Intel and Apple silicon), the platforms gurobipy ships for. Every wheel is installed and
+tested on Python 3.12 and 3.14 before anything is published. To release:
+
+1. Bump `version` in `Cargo.toml`, which is the package version, and run `uv lock`.
+2. Commit, then tag and push the tag:
+   ```shell
+   git tag v0.1.2
+   git push origin v0.1.2
+   ```
+3. The workflow publishes to PyPI once all wheels pass, if the tag matches the version in `Cargo.toml`.
+
+Publishing uses PyPI's trusted publishing, configured once on PyPI for the workflow `release.yml` and the GitHub
+environment `pypi`; no API token is stored. Starting the workflow manually from the Actions tab builds and tests all
+wheels without publishing, which is a safe way to try a release first.
 
 ### Checks
 

@@ -13,7 +13,7 @@ crate-type = ["cdylib"]
 arrow-array = "59"
 arrow-schema = "59"
 libloading = "0.9.0"
-pyo3 = "0.29.3"
+pyo3 = { version = "0.29.3", features = ["abi3-py312"] }
 # We do not need buffer-protocol input. pyo3-arrow still compiles in the Rust numpy crate, which
 # only imports Python numpy when its functions are called; our code paths never call them.
 pyo3-arrow = { version = "0.19", default-features = false }
