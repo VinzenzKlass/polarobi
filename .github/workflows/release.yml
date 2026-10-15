@@ -74,7 +74,9 @@ jobs:
     environment:
       name: pypi
       url: https://pypi.org/project/polarobi/
+    # Job permissions replace the workflow's, so reading the repository is granted again here.
     permissions:
+      contents: read
       # Trusted publishing: PyPI accepts this workflow's identity token, no API token needed.
       id-token: write
     steps:
