@@ -6,12 +6,16 @@ hide:
   - toc
 ---
 
+<p align="center" style="margin: -15px 0 10px 0">
+    <img width="320"  src="img/logo.webp" alt='' style="border-radius: 15px">
+</p>
+
 <h1 align="center" style="font-size: 3rem; font-weight: 600; margin: 10px 0 -15px 0; color: var(--md-typeset-color)">
 polarobi
 </h1>
 
 <h1 align="center" style="font-size: 1.2rem; font-weight: 300; margin: 15px 0">
-    Build gurobipy models from polars frames.
+   Build gurobipy models from polars frames, passing Arrow memory straight to Gurobi's C API.
 </h1>
 
 ---

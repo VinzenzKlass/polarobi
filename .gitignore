@@ -8,6 +8,7 @@ __pycache__/
 dist/
 target/
 build/
+.cache
 
 # Local Debug Files
 **/debug.py

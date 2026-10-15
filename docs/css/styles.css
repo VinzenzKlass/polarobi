@@ -87,7 +87,6 @@
     color: var(--md-code-fg-color);
 }
 
-/* Wider than the default 61rem, so typical code lines fit without scrolling. */
 .md-grid {
-    max-width: 72rem;
+    max-width: 65rem;
 }
