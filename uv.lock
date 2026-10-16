@@ -944,12 +944,10 @@ dependencies = [
 ]
 
 [package.dev-dependencies]
-bench = [
-    { name = "matplotlib" },
-]
 dev = [
     { name = "basedpyright" },
     { name = "hypothesis" },
+    { name = "matplotlib" },
     { name = "maturin" },
     { name = "mkdocstrings", extra = ["python"] },
     { name = "numpy" },
@@ -966,10 +964,10 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
-bench = [{ name = "matplotlib", specifier = ">=3.11.2" }]
 dev = [
     { name = "basedpyright", specifier = ">=1.40.2" },
     { name = "hypothesis", specifier = ">=6.169.4" },
+    { name = "matplotlib", specifier = ">=3.11.2" },
     { name = "maturin", specifier = ">=1.15.0" },
     { name = "mkdocstrings", extras = ["python"], specifier = ">=1.0.7" },
     { name = "numpy", specifier = ">=2.0" },
