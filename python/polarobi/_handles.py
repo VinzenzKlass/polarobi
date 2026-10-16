@@ -1,11 +1,3 @@
-"""
-Registering polarobi's variables and constraints with gurobipy.
-
-gurobipy keeps one handle per element in a list next to Gurobi's model. It numbers the elements
-it adds itself by the length of that list and reads every entry on `update()`, so every element
-polarobi adds gets its handle there, in model order. The native module creates them.
-"""
-
 from typing import Any, Literal
 
 import gurobipy as gp

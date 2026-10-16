@@ -1,11 +1,7 @@
 """
 Build gurobipy models from polars frames, with data passed from Arrow memory to Gurobi's C API.
 
-The API is the `grb` DataFrame namespace, registered on import:
-
-import polarobi
-
-x = keys.grb.add_vars(model, ...)
+https://vinzenzklass.github.io/polarobi/
 """
 
 from polarobi import _library

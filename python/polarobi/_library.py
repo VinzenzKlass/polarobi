@@ -1,5 +1,3 @@
-"""Bind the native module to the Gurobi library gurobipy has loaded into this process."""
-
 import sys
 from pathlib import Path
 

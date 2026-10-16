@@ -167,6 +167,7 @@ uv run prek run --all-files
 | `basedpyright`              | strict type checking of the package and the tests |
 | `cargo fmt`                 | Rust formatting, fixed in place                   |
 | `cargo clippy`              | Rust lints, with warnings as errors               |
+| `cargo test`                | Rust unit tests of the parts that need no Gurobi  |
 
 A hook that fixes files in place fails the commit; add the fixed files and commit again.
 
@@ -174,7 +175,12 @@ A hook that fixes files in place fails the commit; add the fixed files and commi
 
 ```shell
 uv run pytest
+cargo test
 ```
+
+`cargo test` covers what the native module does without Gurobi: reading Arrow columns and lists, the CSR checks
+and merging repeated variables. Some of its tests start an embedded Python to check error messages. Everything that
+calls Gurobi is tested through `pytest` against gurobipy.
 
 Besides unit tests, `tests/test_equivalence.py` runs a [Hypothesis](https://hypothesis.readthedocs.io/) state machine
 that checks every model polarobi builds against the same model built with plain gurobipy, down to the MPS file and

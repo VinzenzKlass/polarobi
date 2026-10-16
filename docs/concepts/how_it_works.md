@@ -33,16 +33,20 @@ polarobi keeps the data in polars until it reaches Gurobi. Per row, it creates e
 
 `add_constrs` turns the terms and rows into the compressed sparse row (CSR) format Gurobi's bulk API takes:
 
-1. The rows are numbered in their order, and each term is joined to its row number.
-2. The terms are sorted by row number, keeping their order within a row.
-3. Each row's first term is found with a binary search over the sorted row numbers.
+1. The terms are grouped by key with `group_by().agg()`, which gives one list of variable indices and one of
+   coefficients per key, keys in order of first appearance and terms in their order.
+2. Rows, if given, are joined to the lists of their key, so a repeated key gets its lists again and a key without
+   terms is dropped or gets empty lists.
 
-All of that is polars. The result, three arrays of row offsets, variable indices and coefficients, plus one array
-each of senses and right-hand sides, goes to a single `GRBXaddconstrs` call.
+All of that is polars, and the lists already are CSR: Arrow stores a list column as one flat array of items plus the
+offset of each row into it. The native module takes the offsets as the row starts and the items as the variable
+indices and coefficients, without reshaping anything, and passes them with one array each of senses and right-hand
+sides to a single `GRBXaddconstrs` call.
 
-Gurobi rejects a variable that appears twice in a row, while gurobipy sums such repeats first. Before the call, the
-native module checks for repeats in one pass and, only if there are any, merges them into new arrays, summing
-coefficients left to right in the order of the terms frame.
+Before the call, the native module checks every variable index against the model's variable count, since Gurobi
+rejects an unknown variable without saying which. Gurobi also rejects a variable that appears twice in a row, while
+gurobipy sums such repeats first; the native module checks for repeats in one pass and, only if there are any,
+merges them into new arrays, summing coefficients left to right in the order of the terms frame.
 
 ### Zero Copy
 

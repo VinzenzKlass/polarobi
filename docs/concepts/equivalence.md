@@ -4,9 +4,9 @@ description: What polarobi guarantees about the models it builds, and how that i
 ---
 
 !!! tip "TL;DR"
-For every operation that gurobipy also offers, polarobi builds exactly the model gurobipy builds: the same
-variables, constraints, coefficients, names and order, down to signed zeros. Its test suite checks that against
-gurobipy itself on random inputs.
+    For every operation that gurobipy also offers, polarobi builds exactly the model gurobipy builds: the same
+    variables, constraints, coefficients, names and order, down to signed zeros. Its test suite checks that against
+    gurobipy itself on random inputs.
 
 ## The Guarantee
 

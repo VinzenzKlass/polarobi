@@ -129,6 +129,25 @@ def test_errors(model: gp.Model) -> None:
         terms.grb.add_constrs(model, by="g", sense="<")
 
 
+def test_null_keys_group_like_gurobipy(model: gp.Model) -> None:
+    """A null key is a key: gurobipy groups `None` keys too, and names them `None`."""
+    x = pl.DataFrame({"k": [1, 2, 3]}).grb.add_vars(model, name="x")
+    terms = x.with_columns(g=pl.Series([1, None, None]), coef=pl.Series([1.0, 2.0, 3.0]))
+    rows = terms.grb.add_constrs(model, by="g", sense="<=", rhs=1.0, coef="coef", name="c")
+    model.update()
+    assert rows.get_column("g").to_list() == [1, None]
+    assert [c.ConstrName for c in rows.grb.handles(model, kind="constr")] == ["c[1]", "c[None]"]
+    assert model.getRow(_constr(model, "c[None]")).size() == 2
+    # Given rows match a null key as well, with or without terms.
+    given = pl.DataFrame({"g": [None, 1, None, 7]})
+    kept = terms.grb.add_constrs(model, given, by="g", sense="<=", rhs=1.0, drop_empty=False)
+    model.update()
+    assert kept.get_column("g").to_list() == [None, 1, None, 7]
+    assert [model.getRow(c).size() for c in kept.grb.handles(model, kind="constr")] == [2, 1, 2, 0]
+    dropped = terms.grb.add_constrs(model, given, by="g", sense="<=", rhs=1.0)
+    assert dropped.get_column("g").to_list() == [None, 1, None]
+
+
 def test_stub_matches_runtime_namespace() -> None:
     # `grb(df)` relies on the runtime-registered namespace being `GurobiFrame`.
     assert type(pl.DataFrame({"k": [1]}).grb) is polarobi.GurobiFrame

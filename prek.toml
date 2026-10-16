@@ -26,7 +26,9 @@ repos = [
         repo = "local",
         hooks = [
             { id = "cargo-fmt", name = "cargo fmt", entry = "cargo fmt --all", language = "system", types = ["rust"], pass_filenames = false, priority = 0 },
-            { id = "cargo-clippy", name = "cargo clippy", entry = "cargo clippy --all-targets --locked -- -D warnings", language = "system", files = '^(src/.*\.rs|Cargo\.(toml|lock))$', pass_filenames = false, priority = 1 }
+            { id = "cargo-clippy", name = "cargo clippy", entry = "cargo clippy --all-targets --locked -- -D warnings", language = "system", files = '^(src/.*\.rs|Cargo\.(toml|lock))$', pass_filenames = false, priority = 1 },
+            # Unit tests of the pure Rust parts. Some start an embedded Python to check error messages.
+            { id = "cargo-test", name = "cargo test", entry = "cargo test --locked", language = "system", files = '^(src/.*\.rs|Cargo\.(toml|lock))$', pass_filenames = false, priority = 2 }
         ]
     }
 ]
