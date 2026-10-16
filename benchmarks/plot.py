@@ -3,14 +3,15 @@
 """
 Figures for the documentation from a benchmark result file.
 
-Writes a light and a dark variant of each figure to `docs/img/`, and prints the results as a
-Markdown table for the page.
+Writes a light and a dark variant of each figure to `docs/img/`, and prints the results as an
+HTML table for the page.
 
-    uv run --group bench python benchmarks/plot.py benchmarks/results/windows.json
+    uv run --group bench python benchmarks/plot.py benchmarks/results/results.json
 """
 
 import argparse
 import json
+import statistics
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -113,6 +114,11 @@ def _legend(
     ax.legend(loc=loc, frameon=False, fontsize=10, handlelength=1.2, labelcolor=theme.ink)
 
 
+def _mean(result: dict[str, Any]) -> float:
+    """The mean total time of a build's runs, which the table and the build time figure show."""
+    return statistics.fmean(result["runs_total_s"])
+
+
 def build_time(results: Sequence[dict[str, Any]], theme: Theme, out: Path) -> None:
     """Total build time against model size, both axes linear, with the spread across runs."""
     fig, ax = plt.subplots(figsize=(7.2, 3.8), dpi=100)
@@ -122,8 +128,8 @@ def build_time(results: Sequence[dict[str, Any]], theme: Theme, out: Path) -> No
     for builder, label in _BUILDERS.items():
         rows = [r for r in results if r["builder"] == builder]
         sizes = [r["rows"] for r in rows]
-        totals = [r["total_s"] for r in rows]
-        # The band runs from the fastest to the slowest run; the line is the median.
+        totals = [_mean(r) for r in rows]
+        # The band runs from the fastest to the slowest run; the line is the mean.
         ax.fill_between(
             sizes,
             [min(r["runs_total_s"]) for r in rows],
@@ -180,7 +186,10 @@ def build_time(results: Sequence[dict[str, Any]], theme: Theme, out: Path) -> No
 
 
 def phases(results: Sequence[dict[str, Any]], theme: Theme, out: Path) -> None:
-    """Time per phase at the largest size, as horizontal bars grouped by phase."""
+    """
+    Time per phase at the largest size, as horizontal bars grouped by phase. These are the phases
+    of each build's median run, the only run whose phases the result file keeps.
+    """
     largest = max(r["rows"] for r in results)
     rows = {r["builder"]: r for r in results if r["rows"] == largest}
     groups = (("Variables", "variables_s"), ("Constraints", "constraints_s"))
@@ -220,19 +229,11 @@ def phases(results: Sequence[dict[str, Any]], theme: Theme, out: Path) -> None:
     plt.close(fig)
 
 
-def _spread(result: dict[str, Any]) -> str:
-    """The median with the fastest and slowest run, in the median's unit."""
-    median, runs = result["total_s"], result["runs_total_s"]
-    scale, digits = (1, 1) if median >= 1 else (1000, 0)
-    low, high = (f"{value * scale:.{digits}f}" for value in (min(runs), max(runs)))
-    return f"{_seconds(median)} ({low}–{high})"
-
-
 def table(results: Sequence[dict[str, Any]]) -> str:
     """
-    The results as an HTML table for the page: per size a row with each build's median and, in
-    parentheses, its fastest and slowest run, which expands to one row per run. The speedup
-    divides the median of the faster plain gurobipy build by polarobi's.
+    The results as an HTML table for the page: per size a row with each build's mean, which
+    expands to one row per run. The speedup divides the mean of the next fastest build by
+    polarobi's, and its tooltip names that build.
 
     Markdown tables cannot group rows, hence HTML. Each size is a `tbody` whose first cell holds
     a checkbox; `docs/css/styles.css` shows the run rows of a checked group, without JavaScript.
@@ -251,16 +252,11 @@ def table(results: Sequence[dict[str, Any]]) -> str:
     ]
     for size in sorted({r["rows"] for r in results}):
         rows = {r["builder"]: r for r in results if r["rows"] == size}
-        # Against the faster of the two plain gurobipy builds by median.
-        gurobipy = min(
-            rows["gurobipy_loop"], rows["gurobipy_addconstrs"], key=lambda r: r["total_s"]
-        )
-        ours = rows["polarobi"]
-        speedup = gurobipy["total_s"] / ours["total_s"]
-        # From its fastest run against polarobi's slowest, to its slowest against the fastest.
-        worst = min(gurobipy["runs_total_s"]) / max(ours["runs_total_s"])
-        best = max(gurobipy["runs_total_s"]) / min(ours["runs_total_s"])
-        cells = "".join(f"<td>{_spread(rows[b])}</td>" for b in _BUILDERS)
+        # Against the next fastest build by mean, whichever that is at this size.
+        others = [b for b in _BUILDERS if b != "polarobi"]
+        nearest = min(others, key=lambda b: _mean(rows[b]))
+        speedup = _mean(rows[nearest]) / _mean(rows["polarobi"])
+        cells = "".join(f"<td>{_seconds(_mean(rows[b]))}</td>" for b in _BUILDERS)
         toggle = (
             f'<label title="Show each run"><input type="checkbox"'
             f' aria-label="Show each run at {size:,} rows">{size:,}</label>'
@@ -268,7 +264,7 @@ def table(results: Sequence[dict[str, Any]]) -> str:
         lines += [
             "<tbody>",
             f'<tr class="summary"><td>{toggle}</td>{cells}'
-            f"<td>{speedup:.1f}x ({worst:.1f}–{best:.1f})</td></tr>",
+            f'<td title="Against {_BUILDERS[nearest]}">{speedup:.1f}x</td></tr>',
         ]
         for run in range(max(len(r["runs_total_s"]) for r in rows.values())):
             runs = "".join(
