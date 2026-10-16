@@ -21,7 +21,8 @@ jobs:
           cargo clippy --all-targets --locked -- -D warnings
           cargo test --locked
       - name: Install Dependencies
-        run: uv sync --dev --locked
+        # Every group, so that the type checker sees the benchmark's dependencies too.
+        run: uv sync --all-groups --locked
       - name: Ruff Checks
         run: |
           uv run ruff check .
