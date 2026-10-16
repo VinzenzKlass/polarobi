@@ -1,5 +1,8 @@
+# pyright: reportUnknownMemberType=false
+# gurobipy-pandas leaves its `index_formatter` callables untyped, so its functions read as
+# partially unknown.
 """
-Benchmark: building the same model with plain gurobipy and with polarobi.
+Benchmark: building the same model with polarobi, plain gurobipy and gurobipy-pandas.
 
 The model is a typical allocation model, at several sizes:
 
@@ -12,20 +15,27 @@ The model is a typical allocation model, at several sizes:
 The gurobipy side is written the way such models usually are: `iter_rows()` into `addVars`, and
 `group_by().agg()` with tupledict lookups into one `LinExpr` per key. Its constraints are added in
 the two common ways, so there are two gurobipy builds: a loop of `addLConstr` calls, and one
-`addConstrs` call per family over a generator. All builds produce identical models, which is
-checked through Gurobi's `Fingerprint` on every run.
+`addConstrs` call per family over a generator.
+
+A third build uses gurobipy-pandas, written as its documentation suggests: `gppd.add_vars` on
+frames indexed by their keys, `groupby().sum()` into one `LinExpr` per key and `gppd.add_constrs`;
+its inputs are converted to pandas before timing.
+
+All builds produce identical models, with the same names, which is checked through Gurobi's
+`Fingerprint` on every run.
 
 Inputs are generated from a fixed seed with numpy, so runs are repeatable. Only model building is
 timed, including the final `update()`; nothing is solved, so no license limits apply.
 
-    uv run python benchmarks/build_model.py
-    uv run python benchmarks/build_model.py --sizes 10000 100000 --repeats 5
+    uv run --group bench python benchmarks/build_model.py
+    uv run --group bench python benchmarks/build_model.py --sizes 10000 100000 --repeats 5
 """
 
 import argparse
 import ctypes
 import datetime
 import gc
+import hashlib
 import json
 import os
 import platform
@@ -39,7 +49,9 @@ from pathlib import Path
 from typing import Literal
 
 import gurobipy as gp
+import gurobipy_pandas as gppd
 import numpy as np
+import pandas as pd
 import polars as pl
 from polarobi import GurobiFrame as grb
 
@@ -209,19 +221,64 @@ def build_polarobi(model: gp.Model, data: Data) -> Timing:
     return Timing(variables - start, time.perf_counter() - variables)
 
 
+_PANDAS: dict[int, tuple[pd.DataFrame, pd.DataFrame]] = {}
+
+
+def _as_pandas(data: Data) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """The inputs as pandas frames indexed by their keys, converted once per data set."""
+    if id(data) not in _PANDAS:
+        _PANDAS.clear()  # One size at a time: at 10M rows the copy takes gigabytes.
+        options = data.options.to_pandas().set_index(["order", *_KEYS])
+        _PANDAS[id(data)] = (options, data.capacity.to_pandas().set_index(_KEYS))
+    return _PANDAS[id(data)]
+
+
+def build_gurobipy_pandas(model: gp.Model, data: Data) -> Timing:
+    """gurobipy-pandas as documented; its pandas inputs are prepared before timing starts."""
+    options, capacity = _as_pandas(data)
+    start = time.perf_counter()
+    x = gppd.add_vars(model, options, vtype=gp.GRB.BINARY, obj="value", name="x")
+    y = gppd.add_vars(model, capacity, vtype=gp.GRB.BINARY, name="y")
+    variables = time.perf_counter()
+
+    # sort=False keeps the keys in order of first appearance, as in the other builds.
+    assign = x.groupby(level="order", sort=False).sum()
+    gppd.add_constrs(model, assign, gp.GRB.LESS_EQUAL, 1.0, name="assign")
+    terms = x * options["quantity"]
+    quantity = terms.groupby(level=_KEYS, sort=False).sum().reindex(capacity.index)
+    gppd.add_constrs(model, quantity, gp.GRB.LESS_EQUAL, capacity["capacity"], name="capacity")
+    low = quantity - capacity["moq"] * y
+    gppd.add_constrs(model, low, gp.GRB.GREATER_EQUAL, 0.0, name="moq_min")
+    high = quantity - capacity["capacity"] * y
+    gppd.add_constrs(model, high, gp.GRB.LESS_EQUAL, 0.0, name="moq_max")
+    model.update()
+    return Timing(variables - start, time.perf_counter() - variables)
+
+
 _BUILDERS: dict[str, Callable[[gp.Model, Data], Timing]] = {
     "gurobipy_loop": build_gurobipy_loop,
     "gurobipy_addconstrs": build_gurobipy_addconstrs,
+    "gurobipy_pandas": build_gurobipy_pandas,
     "polarobi": build_polarobi,
 }
 
 
-def run(env: gp.Env, data: Data, builder: Callable[[gp.Model, Data], Timing]) -> tuple[Timing, int]:
+def run(
+    env: gp.Env, data: Data, builder: Callable[[gp.Model, Data], Timing], *, names: bool = False
+) -> tuple[Timing, int, str]:
+    """
+    Time `builder` on a fresh model; return its timing, the model's fingerprint and, with `names`,
+    a digest of all variable and constraint names, which the fingerprint does not cover.
+    """
     gc.collect()
     with gp.Model(env=env) as model:
         timing = builder(model, data)
         fingerprint = model.Fingerprint
-    return timing, fingerprint
+        digest = ""
+        if names:
+            text = "\n".join([*model.getAttr("VarName"), *model.getAttr("ConstrName")])
+            digest = hashlib.sha256(text.encode()).hexdigest()
+    return timing, fingerprint, digest
 
 
 _MODEL = {
@@ -246,7 +303,7 @@ def _pin(cpus: list[int]) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Benchmark model building, gurobipy vs polarobi.")
+    parser = argparse.ArgumentParser(description="Benchmark model building against polarobi.")
     parser.add_argument(
         "--sizes", type=int, nargs="+", default=[10_000, 100_000, 1_000_000, 10_000_000]
     )
@@ -268,11 +325,13 @@ def main() -> None:
     for size in args.sizes:
         data = generate(size, args.seed)
         fingerprints: set[int] = set()
+        digests: dict[str, str] = {}
         for name, builder in _BUILDERS.items():
-            run(env, data, builder)  # Warm-up, untimed: first calls pay one-off setup costs.
+            # Warm-up, untimed: first calls pay one-off setup costs. It also checks the names.
+            _, _, digests[name] = run(env, data, builder, names=True)
             timings: list[Timing] = []
             for _ in range(args.repeats):
-                timing, fingerprint = run(env, data, builder)
+                timing, fingerprint, _ = run(env, data, builder)
                 timings.append(timing)
                 fingerprints.add(fingerprint)
             # The median run by total time, with its phases.
@@ -294,6 +353,8 @@ def main() -> None:
             )
         if len(fingerprints) != 1:
             raise SystemExit(f"Models differ at {size:,} rows: fingerprints {sorted(fingerprints)}")
+        if len(set(digests.values())) != 1:
+            raise SystemExit(f"Names differ at {size:,} rows: {digests}")
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     report = {
@@ -305,14 +366,17 @@ def main() -> None:
         },
         "versions": {
             "python": platform.python_version(),
-            **{package: version(package) for package in ("polarobi", "polars", "gurobipy")},
+            **{
+                package: version(package)
+                for package in ("polarobi", "polars", "gurobipy", "gurobipy-pandas", "pandas")
+            },
         },
         "settings": {"seed": args.seed, "repeats": args.repeats, "cpus": args.cpus},
         "model": _MODEL,
         "results": results,
     }
     args.out.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-    print(f"Identical fingerprints at every size. Results written to {args.out}.")
+    print(f"Identical fingerprints and names at every size. Results written to {args.out}.")
 
 
 if __name__ == "__main__":

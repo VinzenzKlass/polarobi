@@ -90,3 +90,73 @@
 .md-grid {
     max-width: 65rem;
 }
+
+/* The benchmark table, printed by benchmarks/plot.py: per size a summary row whose checkbox shows
+   one row per run, without JavaScript. The table itself keeps no class, so the theme's table
+   styles still apply; these rules repeat the theme's selectors under the wrapper to win. */
+.md-typeset .benchmark-table table:not([class]) th:not([align]),
+.md-typeset .benchmark-table table:not([class]) td:not([align]) {
+    text-align: right;
+    padding-left: 0.75em;
+    padding-right: 0.75em;
+}
+
+.md-typeset .benchmark-table table:not([class]) th {
+    min-width: 0;
+}
+
+.md-typeset .benchmark-table table:not([class]) td {
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+/* The chevron at the cell's left edge, so that all of them line up; the size stays right-aligned. */
+.md-typeset .benchmark-table label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.8em;
+    cursor: pointer;
+}
+
+/* The checkbox, drawn as a chevron: pointing right when closed, down when open. */
+.md-typeset .benchmark-table input[type="checkbox"] {
+    appearance: none;
+    width: 0.45em;
+    height: 0.45em;
+    margin: 0 0.15em;
+    border-right: 0.12em solid currentColor;
+    border-bottom: 0.12em solid currentColor;
+    transform: rotate(-45deg);
+    transition: transform 0.15s;
+    cursor: pointer;
+}
+
+.md-typeset .benchmark-table input[type="checkbox"]:checked {
+    transform: rotate(45deg);
+}
+
+.md-typeset .benchmark-table input[type="checkbox"]:focus-visible {
+    outline: 0.1em solid var(--md-accent-fg-color);
+    outline-offset: 0.25em;
+}
+
+.md-typeset .benchmark-table table:not([class]) tr.run {
+    display: none;
+}
+
+.md-typeset .benchmark-table table:not([class]) tbody:has(input:checked) tr.run {
+    display: table-row;
+}
+
+.md-typeset .benchmark-table table:not([class]) tr.run td {
+    padding-top: 0.15em;
+    padding-bottom: 0.15em;
+    border-top: none;
+    font-size: 0.9em;
+    color: var(--md-default-fg-color--light);
+}
+
+.md-typeset .benchmark-table table:not([class]) tr.run:last-child td {
+    padding-bottom: 0.6em;
+}

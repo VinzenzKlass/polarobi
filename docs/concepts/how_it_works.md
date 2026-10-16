@@ -101,7 +101,7 @@ version as gurobipy.
 
 ## Performance
 
-A reproducible benchmark builds the same allocation model with polarobi and in two common gurobipy styles, from
-1,000 to ten million rows. At a million rows polarobi took 1.6 s against 9.7 s for the faster gurobipy build, and at
-ten million 22.4 s against 113.4 s, with identical fingerprints; see [Benchmarks](../benchmarks.md) for the figures,
-the model and how to run it yourself.
+A reproducible benchmark builds the same allocation model with polarobi, in two common gurobipy styles and with
+gurobipy-pandas. At a million rows polarobi took 1.3 s, against 7.2 s for the faster gurobipy build and 18.9 s for
+gurobipy-pandas, with identical fingerprints; see [Benchmarks](../benchmarks.md) for the figures, the model and how
+to run it yourself.
