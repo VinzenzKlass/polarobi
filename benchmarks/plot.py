@@ -28,13 +28,14 @@ _IMG = Path(__file__).parents[1] / "docs" / "img"
 _BUILDERS = {
     "gurobipy_loop": "gurobipy, addLConstr loop",
     "gurobipy_addconstrs": "gurobipy, addConstrs",
+    "gurobipy_pandas": "gurobipy-pandas",
     "polarobi": "polarobi",
 }
 
 
 @dataclass(frozen=True, slots=True)
 class Theme:
-    """Colors from the validated reference palette (categorical slots 1-3), stepped per mode."""
+    """Colors from the validated reference palette (categorical slots 1-4), stepped per mode."""
 
     name: str
     series: dict[str, str]
@@ -49,7 +50,12 @@ class Theme:
 _THEMES = (
     Theme(
         "light",
-        {"polarobi": "#2a78d6", "gurobipy_loop": "#eb6834", "gurobipy_addconstrs": "#1baf7a"},
+        {
+            "polarobi": "#2a78d6",
+            "gurobipy_loop": "#eb6834",
+            "gurobipy_addconstrs": "#1baf7a",
+            "gurobipy_pandas": "#eda100",
+        },
         ink="#0b0b0b",
         muted="#52514e",
         grid="#e1e0d9",
@@ -58,7 +64,12 @@ _THEMES = (
     ),
     Theme(
         "dark",
-        {"polarobi": "#3987e5", "gurobipy_loop": "#d95926", "gurobipy_addconstrs": "#199e70"},
+        {
+            "polarobi": "#3987e5",
+            "gurobipy_loop": "#d95926",
+            "gurobipy_addconstrs": "#199e70",
+            "gurobipy_pandas": "#c98500",
+        },
         ink="#f0efec",
         muted="#c3c2b7",
         grid="#2c2c2a",
@@ -173,7 +184,8 @@ def phases(results: Sequence[dict[str, Any]], theme: Theme, out: Path) -> None:
     largest = max(r["rows"] for r in results)
     rows = {r["builder"]: r for r in results if r["rows"] == largest}
     groups = (("Variables", "variables_s"), ("Constraints", "constraints_s"))
-    fig, ax = plt.subplots(figsize=(7.2, 3.4), dpi=100)
+    # Tall enough for one 24px bar per build in each group, plus the title and the legend.
+    fig, ax = plt.subplots(figsize=(7.2, 1.6 + 0.6 * len(_BUILDERS)), dpi=100)
     fig.patch.set_alpha(0)
     _style(ax, theme, grid="x")
     ax.spines["bottom"].set_visible(False)
@@ -217,13 +229,29 @@ def _spread(result: dict[str, Any]) -> str:
 
 
 def table(results: Sequence[dict[str, Any]]) -> str:
+    """
+    The results as an HTML table for the page: per size a row with each build's median and, in
+    parentheses, its fastest and slowest run, which expands to one row per run. The speedup
+    divides the median of the faster plain gurobipy build by polarobi's.
+
+    Markdown tables cannot group rows, hence HTML. Each size is a `tbody` whose first cell holds
+    a checkbox; `docs/css/styles.css` shows the run rows of a checked group, without JavaScript.
+    """
+    headers = {
+        "gurobipy_loop": "gurobipy, <code>addLConstr</code> loop",
+        "gurobipy_addconstrs": "gurobipy, <code>addConstrs</code>",
+        "gurobipy_pandas": "gurobipy-pandas",
+        "polarobi": "polarobi",
+    }
+    head = "".join(f"<th>{headers[b]}</th>" for b in _BUILDERS)
     lines = [
-        "| Rows | gurobipy, `addLConstr` loop | gurobipy, `addConstrs` | polarobi | Speedup |",
-        "|---:|---:|---:|---:|---:|",
+        '<div class="benchmark-table">',
+        "<table>",
+        f"<thead><tr><th>Rows</th>{head}<th>Speedup</th></tr></thead>",
     ]
     for size in sorted({r["rows"] for r in results}):
         rows = {r["builder"]: r for r in results if r["rows"] == size}
-        # Against the faster of the two gurobipy builds by median, the fair comparison.
+        # Against the faster of the two plain gurobipy builds by median.
         gurobipy = min(
             rows["gurobipy_loop"], rows["gurobipy_addconstrs"], key=lambda r: r["total_s"]
         )
@@ -232,10 +260,26 @@ def table(results: Sequence[dict[str, Any]]) -> str:
         # From its fastest run against polarobi's slowest, to its slowest against the fastest.
         worst = min(gurobipy["runs_total_s"]) / max(ours["runs_total_s"])
         best = max(gurobipy["runs_total_s"]) / min(ours["runs_total_s"])
-        cells = [_spread(rows[builder]) for builder in _BUILDERS]
-        lines.append(
-            f"| {size:,} | {' | '.join(cells)} | {speedup:.1f}x ({worst:.1f}–{best:.1f}) |"
+        cells = "".join(f"<td>{_spread(rows[b])}</td>" for b in _BUILDERS)
+        toggle = (
+            f'<label title="Show each run"><input type="checkbox"'
+            f' aria-label="Show each run at {size:,} rows">{size:,}</label>'
         )
+        lines += [
+            "<tbody>",
+            f'<tr class="summary"><td>{toggle}</td>{cells}'
+            f"<td>{speedup:.1f}x ({worst:.1f}–{best:.1f})</td></tr>",
+        ]
+        for run in range(max(len(r["runs_total_s"]) for r in rows.values())):
+            runs = "".join(
+                f"<td>{_seconds(rows[b]['runs_total_s'][run])}</td>"
+                if run < len(rows[b]["runs_total_s"])
+                else "<td></td>"
+                for b in _BUILDERS
+            )
+            lines.append(f'<tr class="run"><td>run {run + 1}</td>{runs}<td></td></tr>')
+        lines.append("</tbody>")
+    lines += ["</table>", "</div>"]
     return "\n".join(lines)
 
 

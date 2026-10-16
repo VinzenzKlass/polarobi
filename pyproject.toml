@@ -15,6 +15,15 @@ dependencies = [
     "polars>=2.0.0",
 ]
 [dependency-groups]
+# The benchmark and its figures: the libraries it compares polarobi against, and their type stubs.
+bench = [
+    "gurobipy-pandas>=1.2.2",
+    "matplotlib>=3.11.2",
+    "numpy>=2.5.4",
+    "pandas>=3.0.6",
+    "pandas-stubs>=3.0.5.260914",
+    "pyarrow>=26.0.0",
+]
 dev = [
     "maturin>=1.15.0",
     "prek>=0.5.5",
@@ -22,7 +31,6 @@ dev = [
     "basedpyright>=1.40.2",
     "pytest>=9.1.1",
     "hypothesis>=6.169.4",
-    "matplotlib>=3.11.2",
     # Type checking only: polars' annotations reference numpy types, which are Unknown without
     # it. polarobi itself never imports numpy, tests/test_no_numpy.py guards that.
     "numpy>=2.0",

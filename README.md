@@ -84,13 +84,14 @@ to the Gurobi library that gurobipy has already loaded into the process.
 ### Setting up
 
 ```shell
-uv sync
+uv sync --all-groups
 uv run prek install
 ```
 
-`uv sync` creates `.venv`, installs the dev dependencies and builds polarobi with maturin as an editable install: a
-`.pth` file points at `python/`, and the compiled extension is placed next to the Python sources as
-`python/polarobi/_native.*.pyd` (or `.so`). `prek install` sets up the pre-commit hooks below.
+`uv sync --all-groups` creates `.venv`, installs the dev and benchmark dependencies and builds polarobi with
+maturin as an editable install: a `.pth` file points at `python/`, and the compiled extension is placed next to the
+Python sources as `python/polarobi/_native.*.pyd` (or `.so`). The type check covers the benchmarks too, so it needs
+the `bench` group. `prek install` sets up the pre-commit hooks below.
 
 ### The build loop
 
@@ -196,18 +197,18 @@ HYPOTHESIS_PROFILE=thorough uv run pytest tests/test_equivalence.py
 
 ### Benchmarks
 
-`benchmarks/build_model.py` builds the same allocation model with polarobi and in two gurobipy styles at several
-sizes, checks that their fingerprints match, and writes the timings to `benchmarks/results/<system>.json`.
-`benchmarks/plot.py` draws the figures on the documentation's [Benchmarks](docs/benchmarks.md) page from
-such a file:
+`benchmarks/build_model.py` builds the same allocation model with polarobi, in two plain gurobipy styles and
+with gurobipy-pandas at several sizes, checks that their fingerprints match, and writes
+the timings to `benchmarks/results/<system>.json`. `benchmarks/plot.py` draws the figures on the documentation's
+[Benchmarks](docs/benchmarks.md) page from such a file and prints its table:
 
 ```shell
-uv run python benchmarks/build_model.py --sizes 1000 10000 100000 1000000 10000000 --cpus 0,2,4,6,8,10
+uv run --group bench python benchmarks/build_model.py --sizes 1000 10000 100000 1000000 10000000 --cpus 0,2,4,6,8,10
 uv run --group bench python benchmarks/plot.py benchmarks/results/windows.json
 ```
 
 `--cpus` pins the run to one thread per performance core; on hybrid CPUs the operating system otherwise moves it
-between core types. 10M rows need about 11 GB of free memory.
+between core types. 10M rows need well over 11 GB of free memory.
 
 ### Documentation
 
