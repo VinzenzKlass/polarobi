@@ -13,25 +13,27 @@ description: How long polarobi takes to build a model compared to plain gurobipy
 
 <div style="text-align: center" markdown>
 
-![Build time against model size, both axes linear: polarobi stays below both gurobipy builds from 10,000 rows on](img/benchmark-build-time-light.svg#only-light)
-![Build time against model size, both axes linear: polarobi stays below both gurobipy builds from 10,000 rows on](img/benchmark-build-time-dark.svg#only-dark)
+![Build time against model size, both axes linear, with shaded bands from the fastest to the slowest run: polarobi stays below both gurobipy builds from 10,000 rows on, and its band is far narrower at 10M rows](img/benchmark-build-time-light.svg#only-light)
+![Build time against model size, both axes linear, with shaded bands from the fastest to the slowest run: polarobi stays below both gurobipy builds from 10,000 rows on, and its band is far narrower at 10M rows](img/benchmark-build-time-dark.svg#only-dark)
 
 </div>
 <div style="text-align: center" markdown>
 
-|       Rows | gurobipy, `addLConstr` loop | gurobipy, `addConstrs` | polarobi | Speedup |
-|-----------:|----------------------------:|-----------------------:|---------:|--------:|
-|      1,000 |                       16 ms |                  26 ms |    17 ms |    1.0x |
-|     10,000 |                       71 ms |                 108 ms |    26 ms |    2.7x |
-|    100,000 |                      839 ms |                  1.0 s |   172 ms |    4.9x |
-|  1,000,000 |                       9.7 s |                 11.4 s |    1.6 s |    6.0x |
-| 10,000,000 |                     113.4 s |                131.2 s |   22.4 s |    5.1x |
+|       Rows | gurobipy, `addLConstr` loop | gurobipy, `addConstrs` |           polarobi |        Speedup |
+|-----------:|----------------------------:|-----------------------:|-------------------:|---------------:|
+|      1,000 |               16 ms (16–16) |          26 ms (26–27) |      17 ms (14–20) | 1.0x (0.8–1.1) |
+|     10,000 |               71 ms (70–72) |       108 ms (107–110) |      26 ms (24–27) | 2.7x (2.6–3.0) |
+|    100,000 |            839 ms (628–862) |        1.0 s (1.0–1.1) |   172 ms (163–190) | 4.9x (3.3–5.3) |
+|  1,000,000 |             9.7 s (9.5–9.9) |     11.4 s (11.2–11.4) |    1.6 s (1.6–1.6) | 6.0x (5.9–6.2) |
+| 10,000,000 |        113.4 s (99.6–189.1) |    131.2 s (98.9–215.6) | 22.4 s (19.2–25.3) | 5.1x (3.9–9.9) |
 
 </div>
-The speedup is measured against the faster gurobipy build, which was the `addLConstr` loop at every size. Times are
-the median of three runs after an untimed warm-up, for building the whole model including the final `update()`. All
-three builds produced the same `Fingerprint`, and the same variable and constraint names, at every size. At a
-thousand rows polarobi's fixed cost per call, mostly polars planning its joins, about evens out what it saves.
+Times are the median of three runs after an untimed warm-up, for building the whole model including the final
+`update()`, with the fastest and slowest run in parentheses, in the same unit. The speedup divides the median of the
+faster gurobipy build, which was the `addLConstr` loop at every size, by polarobi's. Its range runs from that build's
+fastest run against polarobi's slowest to its slowest against polarobi's fastest. All three builds produced the same
+`Fingerprint`, and the same variable and constraint names, at every size. At a thousand rows polarobi's fixed cost
+per call, mostly polars planning its joins, about evens out what it saves.
 
 ## Where the Time Goes
 

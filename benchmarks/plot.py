@@ -1,5 +1,5 @@
-# matplotlib's annotations are only partially typed.
 # pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false
+# matplotlib's annotations are only partially typed.
 """
 Figures for the documentation from a benchmark result file.
 
@@ -103,7 +103,7 @@ def _legend(
 
 
 def build_time(results: Sequence[dict[str, Any]], theme: Theme, out: Path) -> None:
-    """Total build time against model size, both axes linear."""
+    """Total build time against model size, both axes linear, with the spread across runs."""
     fig, ax = plt.subplots(figsize=(7.2, 3.8), dpi=100)
     fig.patch.set_alpha(0)
     _style(ax, theme)
@@ -112,6 +112,16 @@ def build_time(results: Sequence[dict[str, Any]], theme: Theme, out: Path) -> No
         rows = [r for r in results if r["builder"] == builder]
         sizes = [r["rows"] for r in rows]
         totals = [r["total_s"] for r in rows]
+        # The band runs from the fastest to the slowest run; the line is the median.
+        ax.fill_between(
+            sizes,
+            [min(r["runs_total_s"]) for r in rows],
+            [max(r["runs_total_s"]) for r in rows],
+            color=theme.series[builder],
+            alpha=0.15,
+            linewidth=0,
+            zorder=2,
+        )
         ax.plot(
             sizes,
             totals,
@@ -198,17 +208,34 @@ def phases(results: Sequence[dict[str, Any]], theme: Theme, out: Path) -> None:
     plt.close(fig)
 
 
+def _spread(result: dict[str, Any]) -> str:
+    """The median with the fastest and slowest run, in the median's unit."""
+    median, runs = result["total_s"], result["runs_total_s"]
+    scale, digits = (1, 1) if median >= 1 else (1000, 0)
+    low, high = (f"{value * scale:.{digits}f}" for value in (min(runs), max(runs)))
+    return f"{_seconds(median)} ({low}–{high})"
+
+
 def table(results: Sequence[dict[str, Any]]) -> str:
     lines = [
         "| Rows | gurobipy, `addLConstr` loop | gurobipy, `addConstrs` | polarobi | Speedup |",
         "|---:|---:|---:|---:|---:|",
     ]
     for size in sorted({r["rows"] for r in results}):
-        by = {r["builder"]: r["total_s"] for r in results if r["rows"] == size}
-        # Against the faster of the two gurobipy builds, the fair comparison.
-        speedup = min(by["gurobipy_loop"], by["gurobipy_addconstrs"]) / by["polarobi"]
-        cells = [_seconds(by[builder]) for builder in _BUILDERS]
-        lines.append(f"| {size:,} | {' | '.join(cells)} | {speedup:.1f}x |")
+        rows = {r["builder"]: r for r in results if r["rows"] == size}
+        # Against the faster of the two gurobipy builds by median, the fair comparison.
+        gurobipy = min(
+            rows["gurobipy_loop"], rows["gurobipy_addconstrs"], key=lambda r: r["total_s"]
+        )
+        ours = rows["polarobi"]
+        speedup = gurobipy["total_s"] / ours["total_s"]
+        # From its fastest run against polarobi's slowest, to its slowest against the fastest.
+        worst = min(gurobipy["runs_total_s"]) / max(ours["runs_total_s"])
+        best = max(gurobipy["runs_total_s"]) / min(ours["runs_total_s"])
+        cells = [_spread(rows[builder]) for builder in _BUILDERS]
+        lines.append(
+            f"| {size:,} | {' | '.join(cells)} | {speedup:.1f}x ({worst:.1f}–{best:.1f}) |"
+        )
     return "\n".join(lines)
 
 

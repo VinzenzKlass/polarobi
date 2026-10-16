@@ -1,6 +1,9 @@
 [project]
 site_name = "polarobi"
 site_description = "Build gurobipy models from polars frames, passing Arrow memory straight to Gurobi's C API."
+site_url = "https://vinzenzklass.github.io/polarobi/"
+repo_url = "https://github.com/VinzenzKlass/polarobi"
+repo_name = "VinzenzKlass/polarobi"
 watch = ["python/polarobi"]
 extra_css = ["css/styles.css"]
 extra_javascript = ["js/highlight.min.js"]
@@ -43,6 +46,7 @@ features = [
 ]
 
 [project.theme.icon]
+repo = "fontawesome/brands/github"
 logo = "material/vector-polyline"
 
 [[project.theme.palette]]
