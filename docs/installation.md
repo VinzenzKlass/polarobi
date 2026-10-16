@@ -3,6 +3,12 @@ title: Installation
 description: How to install polarobi.
 ---
 
+!!! danger "Experimental"
+    polarobi is unstable and experimental. Its API may change without notice, and it builds on private
+    internals of `gurobipy`. Use it for production models only if you can verify the result, for example by
+    comparing the model's Fingerprint with a model built another way, or if you have other strong guarantees
+    that the model is correct.
+
 polarobi requires Python 3.12 or higher.
 
 === "pip"

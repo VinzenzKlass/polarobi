@@ -15,6 +15,9 @@ dependencies = [
     "polars>=2.0.0",
 ]
 [dependency-groups]
+bench = [
+    "matplotlib>=3.11.2",
+]
 dev = [
     "maturin>=1.15.0",
     "prek>=0.5.5",

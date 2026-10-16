@@ -1,5 +1,11 @@
 # polarobi
 
+> [!WARNING]
+> polarobi is unstable and experimental. Its API may change without notice, and it builds on private
+> internals of `gurobipy`. Use it for production models only if you can verify the result, for example by
+> comparing the model's Fingerprint with a model built another way, or if you have other strong guarantees
+> that the model is correct.
+
 Build gurobipy models from polars frames. Columns go from Arrow memory into the Gurobi C API in
 one call per variable or constraint family, while the model stays fully usable through gurobipy.
 
@@ -181,6 +187,21 @@ HYPOTHESIS_PROFILE=thorough uv run pytest tests/test_equivalence.py
 
 `tests/harness/__init__.py` explains how to extend the harness for a new feature, and
 [Equivalence with gurobipy](docs/concepts/equivalence.md) what it guarantees.
+
+### Benchmarks
+
+`benchmarks/build_model.py` builds the same allocation model with polarobi and in two gurobipy styles at several
+sizes, checks that their fingerprints match, and writes the timings to `benchmarks/results/<system>.json`.
+`benchmarks/plot.py` draws the figures on the documentation's [Benchmarks](docs/benchmarks.md) page from
+such a file:
+
+```shell
+uv run python benchmarks/build_model.py --sizes 1000 10000 100000 1000000 10000000 --cpus 0,2,4,6,8,10
+uv run --group bench python benchmarks/plot.py benchmarks/results/windows.json
+```
+
+`--cpus` pins the run to one thread per performance core; on hybrid CPUs the operating system otherwise moves it
+between core types. 10M rows need about 11 GB of free memory.
 
 ### Documentation
 

@@ -23,6 +23,7 @@ nav = [
         { "How it Works" = "concepts/how_it_works.md" },
         { "Equivalence with gurobipy" = "concepts/equivalence.md" },
     ] },
+    { "Benchmarks" = "benchmarks.md" },
     { "API Reference" = [
         { "DataFrame.grb" = "api/namespace.md" },
     ] },

@@ -18,7 +18,10 @@ often by far.
 polarobi keeps the data in polars until it reaches Gurobi. Per row, it creates exactly one Python object: the
 `gp.Var` or `gp.Constr` handle that gurobipy needs to know about the element.
 
-
+<div style="text-align: center" markdown>
+![The gurobipy route goes from Arrow memory through Python objects per row and gurobipy to Gurobi's C library; polarobi's native module passes pointers into the Arrow buffers to Gurobi directly, then registers handles with gurobipy](../img/architecture-light.svg#only-light)
+![The gurobipy route goes from Arrow memory through Python objects per row and gurobipy to Gurobi's C library; polarobi's native module passes pointers into the Arrow buffers to Gurobi directly, then registers handles with gurobipy](../img/architecture-dark.svg#only-dark)
+</div>
 ## From Frames to Gurobi
 
 ### Variables
@@ -60,7 +63,6 @@ Gurobi.
 `get` allocates one buffer, has Gurobi write the attribute values for all requested elements into it, and hands it
 to polars as an Arrow array. polars takes the buffer over without copying it.
 
-
 ## Registering Handles with gurobipy
 
 gurobipy keeps its own list of the model's variables and constraints next to Gurobi's model, and many of its
@@ -75,17 +77,16 @@ compatibility with gurobipy.
 
 This relies on private parts of gurobipy:
 
-| Attribute | Use |
-|---|---|
-| `Model._cmodel` | The `GRBmodel*` of the model |
-| `Model._internal_vars`, `Model._livevars` | gurobipy's variable list and count |
-| `Model._constrs`, `Model._liveconstrs` | gurobipy's constraint list and count |
-| `Model._has_pending_deletions()` | Whether removals await an update |
-| `gp.Var(cmodel, index)`, `gp.Constr(cmodel, index)` | Handle constructors |
+| Attribute                                           | Use                                  |
+|-----------------------------------------------------|--------------------------------------|
+| `Model._cmodel`                                     | The `GRBmodel*` of the model         |
+| `Model._internal_vars`, `Model._livevars`           | gurobipy's variable list and count   |
+| `Model._constrs`, `Model._liveconstrs`              | gurobipy's constraint list and count |
+| `Model._has_pending_deletions()`                    | Whether removals await an update     |
+| `gp.Var(cmodel, index)`, `gp.Constr(cmodel, index)` | Handle constructors                  |
 
 That is why polarobi supports a single gurobipy minor version per release, and why its test suite checks every
 model it builds against gurobipy itself (see [Equivalence with gurobipy](equivalence.md)).
-
 
 ## Binding to Gurobi
 
@@ -94,11 +95,9 @@ process would hold separate state, and the `GRBmodel*` owned by gurobipy would b
 import, the native module binds to the library already loaded into the process, and checks that it reports the same
 version as gurobipy.
 
-
 ## Performance
 
-On a model with one million named variables and 100,000 constraints with one million non-zeros, building it
-with polarobi took 2.5 to 4.1 seconds, against 6.1 to 15.4 seconds for the equivalent gurobipy loops over
-`iter_rows()`, measured on the same machine at different loads. Of polarobi's time, the constraints took 0.3 to
-0.5 seconds; nearly all of the rest was creating the variable handles. Both builds produced models with the same
-`Fingerprint`.
+A reproducible benchmark builds the same allocation model with polarobi and in two common gurobipy styles, from
+1,000 to ten million rows. At a million rows polarobi took 1.6 s against 9.7 s for the faster gurobipy build, and at
+ten million 22.4 s against 113.4 s, with identical fingerprints; see [Benchmarks](../benchmarks.md) for the figures,
+the model and how to run it yourself.
