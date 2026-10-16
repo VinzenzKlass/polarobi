@@ -4,10 +4,10 @@ description: How long polarobi takes to build a model compared to plain gurobipy
 ---
 
 ???+ tip "TL;DR"
-Building a model with a million variables and their constraints took **1.6 s with polarobi** and **9.7 s with
-the faster of two common gurobipy styles**, 6.0 times faster, with identical models. At ten million it was 22.4 s
-against 113.4 s. The gap grows up to a million rows and holds at five to six times beyond; at a thousand rows, all
-builds take under 30 ms.
+    Building a model with a million variables and their constraints took **1.6 s with polarobi** and **9.7 s with
+    the faster of two common gurobipy styles**, 6.0 times faster, with identical models. At ten million it was 22.4 s
+    against 113.4 s. The gap grows up to a million rows and holds at five to six times beyond; at a thousand rows, all
+    builds take under 30 ms.
 
 ## Build Time
 
