@@ -1,10 +1,3 @@
-"""
-The `df.grb` namespace, the public API of polarobi.
-
-Variables and constraints are identified by an `idx` column holding their Gurobi column or row
-index at creation. Like `Var.index`, these shift when elements before them are removed.
-"""
-
 from collections.abc import Sequence
 from typing import Any, Literal, overload
 
