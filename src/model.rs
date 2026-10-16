@@ -123,28 +123,21 @@ pub fn add_constrs(
     let cind = vars.indices()?;
     let cval = coefs.f64s()?;
     let cbeg = vars.cbeg();
-    // Gurobi trusts cbeg blindly, so a bad offset would read out of bounds.
-    let mut prev = 0;
-    for &beg in cbeg {
-        if beg < prev || beg > cind.len() {
+    let width = match validate(cbeg, &cind, n_vars) {
+        Ok(width) => width,
+        Err(Invalid::Offsets) => {
             return Err(PyValueError::new_err(
                 "list offsets must be non-decreasing and within the items",
             ));
         }
-        prev = beg;
-    }
-    // Gurobi rejects an unknown variable too, but without saying which.
-    let (low, high) = cind
-        .iter()
-        .fold((0, -1), |(lo, hi), &v| (lo.min(v), hi.max(v)));
-    if low < 0 || usize::try_from(high).is_ok_and(|high| high >= n_vars) {
-        let bad = if low < 0 { low } else { high };
-        return Err(gurobi::error(
-            cmodel.py(),
-            gurobi::INDEX_OUT_OF_RANGE,
-            &format!("Variable index {bad} out of range: the model has {n_vars} variables"),
-        ));
-    }
+        Err(Invalid::Index(bad)) => {
+            return Err(gurobi::error(
+                cmodel.py(),
+                gurobi::INDEX_OUT_OF_RANGE,
+                &format!("Variable index {bad} out of range: the model has {n_vars} variables"),
+            ));
+        }
+    };
     let sense = columns::chars("sense", &sense, Some(n))?;
     let rhs = columns::f64s("rhs", &rhs, Some(n))?;
     let names = names
@@ -152,7 +145,6 @@ pub fn add_constrs(
         .map(|c| columns::cstrings("names", c, Some(n)))
         .transpose()?;
     let names = name_ptrs(&names);
-    let width = usize::try_from(high + 1).unwrap_or_default();
     let (cbeg, cind, cval) = match merge_repeats(cbeg, &cind, &cval, width) {
         Some((beg, ind, val)) => (Cow::Owned(beg), Cow::Owned(ind), Cow::Owned(val)),
         None => (Cow::Borrowed(cbeg), cind, cval),
@@ -174,6 +166,39 @@ pub fn add_constrs(
 }
 
 type Csr = (Vec<usize>, Vec<c_int>, Vec<f64>);
+
+/// Why a CSR cannot go to Gurobi.
+#[derive(Debug, PartialEq)]
+enum Invalid {
+    /// A row start decreases or lies beyond the items.
+    Offsets,
+    /// A variable index is negative or not below the model's variable count.
+    Index(c_int),
+}
+
+/// Check what Gurobi would trust blindly or reject without saying why: the row starts `cbeg`,
+/// which it reads without bounds checks, and the variable indices `cind` against the model's
+/// `n_vars` variables. Returns the width `merge_repeats` needs, one past the largest index.
+fn validate(cbeg: &[usize], cind: &[c_int], n_vars: usize) -> Result<usize, Invalid> {
+    let mut prev = 0;
+    for &beg in cbeg {
+        if beg < prev || beg > cind.len() {
+            return Err(Invalid::Offsets);
+        }
+        prev = beg;
+    }
+    let (low, high) = cind
+        .iter()
+        .fold((0, -1), |(lo, hi), &v| (lo.min(v), hi.max(v)));
+    if low < 0 {
+        return Err(Invalid::Index(low));
+    }
+    let width = usize::try_from(high + 1).unwrap_or_default();
+    if width > n_vars {
+        return Err(Invalid::Index(high));
+    }
+    Ok(width)
+}
 
 /// Gurobi rejects a variable that appears more than once in a row. Merge repeats by summing their
 /// coefficients left to right, in the order of the terms; `None` if there are none. Gurobi itself
@@ -306,4 +331,110 @@ pub fn set_attr(
         }
     };
     api.check(py, model, rc)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_accepts_and_measures() {
+        assert_eq!(validate(&[0, 2, 2], &[1, 0, 4], 5), Ok(5));
+        assert_eq!(validate(&[0, 0], &[], 0), Ok(0));
+        assert_eq!(validate(&[], &[], 0), Ok(0));
+        // A last row that ends exactly at the items is valid, and empty.
+        assert_eq!(validate(&[0, 3], &[0, 1, 2], 3), Ok(3));
+    }
+
+    #[test]
+    fn validate_rejects_offsets() {
+        assert_eq!(validate(&[0, 2, 1], &[0, 1, 2], 3), Err(Invalid::Offsets));
+        assert_eq!(validate(&[0, 4], &[0, 1, 2], 3), Err(Invalid::Offsets));
+    }
+
+    #[test]
+    fn validate_rejects_indices() {
+        assert_eq!(validate(&[0], &[0, 3], 3), Err(Invalid::Index(3)));
+        assert_eq!(validate(&[0], &[2, -1, 9], 3), Err(Invalid::Index(-1)));
+        assert_eq!(validate(&[0], &[0], 0), Err(Invalid::Index(0)));
+        assert_eq!(
+            validate(&[0], &[c_int::MIN], 3),
+            Err(Invalid::Index(c_int::MIN))
+        );
+    }
+
+    /// Each row with its repeats summed, in order of first appearance.
+    fn reference(cbeg: &[usize], cind: &[c_int], cval: &[f64]) -> Csr {
+        let (mut beg, mut ind, mut val) = (Vec::new(), Vec::new(), Vec::new());
+        for (row, &start) in cbeg.iter().enumerate() {
+            let end = cbeg.get(row + 1).copied().unwrap_or(cind.len());
+            beg.push(ind.len());
+            let first = ind.len();
+            for (&v, &c) in cind[start..end].iter().zip(&cval[start..end]) {
+                match ind[first..].iter().position(|&w| w == v) {
+                    Some(at) => val[first + at] += c,
+                    None => {
+                        ind.push(v);
+                        val.push(c);
+                    }
+                }
+            }
+        }
+        (beg, ind, val)
+    }
+
+    #[test]
+    fn merge_none_without_repeats() {
+        // The same variable in different rows is not a repeat.
+        assert_eq!(merge_repeats(&[0, 2, 3], &[0, 1, 0, 1], &[1.0; 4], 2), None);
+        assert_eq!(merge_repeats(&[], &[], &[], 0), None);
+        assert_eq!(merge_repeats(&[0, 0], &[], &[], 0), None);
+    }
+
+    #[test]
+    fn merge_sums_left_to_right() {
+        let (a, b, c) = (
+            -999999999.0 * 3.0,
+            -183862175.19652724 * 3.0,
+            627515632.0 * 3.0,
+        );
+        assert_ne!((a + b) + c, a + (b + c));
+        let merged = merge_repeats(&[0], &[1, 0, 1, 1], &[a, 7.0, b, c], 2);
+        assert_eq!(merged, Some((vec![0], vec![1, 0], vec![(a + b) + c, 7.0])));
+    }
+
+    #[test]
+    fn merge_keeps_empty_rows() {
+        let merged = merge_repeats(&[0, 0, 2, 2], &[3, 3, 1], &[1.0, 2.0, 5.0], 4);
+        assert_eq!(merged, Some((vec![0, 0, 1, 1], vec![3, 1], vec![3.0, 5.0])));
+    }
+
+    #[test]
+    fn merge_matches_reference() {
+        // A fixed-seed generator, so failures reproduce without a property-testing dependency.
+        let mut state = 0x9e37_79b9_7f4a_7c15_u64;
+        let mut next = |bound: u64| {
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            (state >> 33) % bound
+        };
+        for _ in 0..2000 {
+            let (rows, width, nnz) = (next(6) as usize, 1 + next(5) as usize, next(16) as usize);
+            let cind: Vec<c_int> = (0..nnz).map(|_| next(width as u64) as c_int).collect();
+            let cval: Vec<f64> = (0..nnz).map(|_| next(9) as f64 - 4.0).collect();
+            let mut cbeg: Vec<usize> = (0..rows).map(|_| next(nnz as u64 + 1) as usize).collect();
+            cbeg.sort_unstable();
+            if let Some(first) = cbeg.first_mut() {
+                *first = 0;
+            } else if nnz > 0 {
+                continue; // No rows cannot hold terms.
+            }
+            let want = reference(&cbeg, &cind, &cval);
+            match merge_repeats(&cbeg, &cind, &cval, width) {
+                Some(got) => assert_eq!(got, want, "cbeg {cbeg:?} cind {cind:?}"),
+                None => assert_eq!((cbeg.clone(), cind.clone(), cval.clone()), want),
+            }
+        }
+    }
 }

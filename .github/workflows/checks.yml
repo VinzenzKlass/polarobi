@@ -19,6 +19,7 @@ jobs:
         run: |
           cargo fmt --all --check
           cargo clippy --all-targets --locked -- -D warnings
+          cargo test --locked
       - name: Install Dependencies
         run: uv sync --dev --locked
       - name: Ruff Checks

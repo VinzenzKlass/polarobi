@@ -1,15 +1,3 @@
-"""
-Implementation of the `df.grb` namespace, documented there.
-
-Data goes from Arrow memory into the Gurobi C API in one call per family, without materializing
-Python objects per row. The created columns and rows are then registered with gurobipy as regular
-`gp.Var` / `gp.Constr` handles, so the model stays fully usable through the gurobipy API:
-`getVars`, `getVarByName`, expressions mixing both kinds of variables, `remove`, `copy`, ...
-
-Where gurobipy has an equivalent call, the result matches it exactly, down to names and signed
-zeros; `tests/test_equivalence.py` checks that against plain gurobipy.
-"""
-
 from collections.abc import Sequence
 from typing import Any, Literal
 
@@ -31,8 +19,7 @@ _SENSE = {
 }
 _ROW = "__polarobi_row"
 _INDEX_TYPES = (pl.Int32, pl.UInt32)
-# gurobipy reports values at or beyond Gurobi's infinity as Python infinities.
-_INFINITY = gp.GRB.INFINITY
+_INFINITY = gp.GRB.INFINITY  # gurobipy reports values >= Gurobi's infinity as Python infinities.
 
 
 def add_vars(
