@@ -22,6 +22,7 @@ dev = [
     "basedpyright>=1.40.2",
     "pytest>=9.1.1",
     "hypothesis>=6.169.4",
+    "matplotlib>=3.11.2",
     # Type checking only: polars' annotations reference numpy types, which are Unknown without
     # it. polarobi itself never imports numpy, tests/test_no_numpy.py guards that.
     "numpy>=2.0",
