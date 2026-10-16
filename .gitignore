@@ -12,6 +12,9 @@ target/
 build/
 .cache
 
+benchmarks/results/*
+!benchmarks/results/gcp-c4-highmem-16.json
+
 # Local Debug Files
 **/debug.py
 **/*.csv

@@ -4,17 +4,17 @@ description: How long polarobi takes to build a model compared to gurobipy and g
 ---
 
 ???+ tip "TL;DR"
-    Building a model with a million variables and their constraints took **1.3 s with polarobi**, **7.2 s with the
-    faster of two common gurobipy styles** and 18.9 s with gurobipy-pandas, all with identical models: 5.7 times
-    faster than gurobipy. The gap grows to ten times at 100,000 rows in this run; at a thousand rows, all builds take
-    under 35 ms.
+    Building a model with ten million variables and their constraints took **10.2 s with polarobi** and **90.8 s
+    with the fastest alternative**, a plain gurobipy loop: 8.9 times faster, with identical models. At a million rows
+    it was 0.9 s against 7.7 s. polarobi was the fastest build at every size, from 1.4 times faster at a thousand
+    rows, and gurobipy-pandas the slowest from a million rows on.
 
 ## Build Time
 
 <div style="text-align: center" markdown>
 
-![Build time against model size, both axes linear, with shaded bands from the fastest to the slowest run: gurobipy-pandas rises steepest to 18.9 s at 1M rows, the two plain gurobipy builds follow at 8.6 s and 7.2 s, and polarobi stays close to the axis at 1.3 s](img/benchmark-build-time-light.svg#only-light)
-![Build time against model size, both axes linear, with shaded bands from the fastest to the slowest run: gurobipy-pandas rises steepest to 18.9 s at 1M rows, the two plain gurobipy builds follow at 8.6 s and 7.2 s, and polarobi stays close to the axis at 1.3 s](img/benchmark-build-time-dark.svg#only-dark)
+![Build time against model size, both axes linear, with shaded bands from the fastest to the slowest run: at 10M rows gurobipy-pandas takes 146.2 s, the two plain gurobipy builds 99.3 s and 90.8 s, and polarobi 10.2 s, close to the axis at every size](img/benchmark-build-time-light.svg#only-light)
+![Build time against model size, both axes linear, with shaded bands from the fastest to the slowest run: at 10M rows gurobipy-pandas takes 146.2 s, the two plain gurobipy builds 99.3 s and 90.8 s, and polarobi 10.2 s, close to the axis at every size](img/benchmark-build-time-dark.svg#only-dark)
 
 </div>
 
@@ -22,44 +22,49 @@ description: How long polarobi takes to build a model compared to gurobipy and g
 <table>
 <thead><tr><th>Rows</th><th>gurobipy, <code>addLConstr</code> loop</th><th>gurobipy, <code>addConstrs</code></th><th>gurobipy-pandas</th><th>polarobi</th><th>Speedup</th></tr></thead>
 <tbody>
-<tr class="summary"><td><label title="Show each run"><input type="checkbox" aria-label="Show each run at 1,000 rows">1,000</label></td><td>16 ms</td><td>27 ms</td><td>33 ms</td><td>17 ms</td><td>1.0x</td></tr>
-<tr class="run"><td>run 1</td><td>16 ms</td><td>27 ms</td><td>33 ms</td><td>17 ms</td><td></td></tr>
-<tr class="run"><td>run 2</td><td>16 ms</td><td>27 ms</td><td>33 ms</td><td>17 ms</td><td></td></tr>
-<tr class="run"><td>run 3</td><td>16 ms</td><td>28 ms</td><td>35 ms</td><td>16 ms</td><td></td></tr>
+<tr class="summary"><td><label title="Show each run"><input type="checkbox" aria-label="Show each run at 1,000 rows">1,000</label></td><td>13 ms</td><td>22 ms</td><td>27 ms</td><td>9 ms</td><td title="Against gurobipy, addLConstr loop">1.4x</td></tr>
+<tr class="run"><td>run 1</td><td>13 ms</td><td>22 ms</td><td>26 ms</td><td>9 ms</td><td></td></tr>
+<tr class="run"><td>run 2</td><td>13 ms</td><td>23 ms</td><td>27 ms</td><td>9 ms</td><td></td></tr>
+<tr class="run"><td>run 3</td><td>13 ms</td><td>22 ms</td><td>27 ms</td><td>10 ms</td><td></td></tr>
 </tbody>
 <tbody>
-<tr class="summary"><td><label title="Show each run"><input type="checkbox" aria-label="Show each run at 10,000 rows">10,000</label></td><td>125 ms</td><td>194 ms</td><td>188 ms</td><td>33 ms</td><td>3.8x</td></tr>
-<tr class="run"><td>run 1</td><td>125 ms</td><td>207 ms</td><td>188 ms</td><td>31 ms</td><td></td></tr>
-<tr class="run"><td>run 2</td><td>122 ms</td><td>190 ms</td><td>188 ms</td><td>36 ms</td><td></td></tr>
-<tr class="run"><td>run 3</td><td>127 ms</td><td>194 ms</td><td>189 ms</td><td>33 ms</td><td></td></tr>
+<tr class="summary"><td><label title="Show each run"><input type="checkbox" aria-label="Show each run at 10,000 rows">10,000</label></td><td>69 ms</td><td>101 ms</td><td>92 ms</td><td>20 ms</td><td title="Against gurobipy, addLConstr loop">3.5x</td></tr>
+<tr class="run"><td>run 1</td><td>70 ms</td><td>101 ms</td><td>92 ms</td><td>20 ms</td><td></td></tr>
+<tr class="run"><td>run 2</td><td>69 ms</td><td>101 ms</td><td>93 ms</td><td>20 ms</td><td></td></tr>
+<tr class="run"><td>run 3</td><td>67 ms</td><td>100 ms</td><td>91 ms</td><td>19 ms</td><td></td></tr>
 </tbody>
 <tbody>
-<tr class="summary"><td><label title="Show each run"><input type="checkbox" aria-label="Show each run at 100,000 rows">100,000</label></td><td>975 ms</td><td>1.2 s</td><td>1.2 s</td><td>98 ms</td><td>10.0x</td></tr>
-<tr class="run"><td>run 1</td><td>954 ms</td><td>1.2 s</td><td>1.2 s</td><td>110 ms</td><td></td></tr>
-<tr class="run"><td>run 2</td><td>978 ms</td><td>1.7 s</td><td>1.2 s</td><td>98 ms</td><td></td></tr>
-<tr class="run"><td>run 3</td><td>975 ms</td><td>1.2 s</td><td>1.2 s</td><td>88 ms</td><td></td></tr>
+<tr class="summary"><td><label title="Show each run"><input type="checkbox" aria-label="Show each run at 100,000 rows">100,000</label></td><td>519 ms</td><td>635 ms</td><td>626 ms</td><td>79 ms</td><td title="Against gurobipy, addLConstr loop">6.5x</td></tr>
+<tr class="run"><td>run 1</td><td>518 ms</td><td>642 ms</td><td>629 ms</td><td>83 ms</td><td></td></tr>
+<tr class="run"><td>run 2</td><td>525 ms</td><td>631 ms</td><td>623 ms</td><td>77 ms</td><td></td></tr>
+<tr class="run"><td>run 3</td><td>514 ms</td><td>631 ms</td><td>624 ms</td><td>78 ms</td><td></td></tr>
 </tbody>
 <tbody>
-<tr class="summary"><td><label title="Show each run"><input type="checkbox" aria-label="Show each run at 1,000,000 rows">1,000,000</label></td><td>7.2 s</td><td>8.6 s</td><td>18.9 s</td><td>1.3 s</td><td>5.7x</td></tr>
-<tr class="run"><td>run 1</td><td>9.3 s</td><td>8.9 s</td><td>21.3 s</td><td>1.2 s</td><td></td></tr>
-<tr class="run"><td>run 2</td><td>7.2 s</td><td>8.6 s</td><td>18.9 s</td><td>1.3 s</td><td></td></tr>
-<tr class="run"><td>run 3</td><td>6.9 s</td><td>8.4 s</td><td>17.9 s</td><td>1.6 s</td><td></td></tr>
+<tr class="summary"><td><label title="Show each run"><input type="checkbox" aria-label="Show each run at 1,000,000 rows">1,000,000</label></td><td>7.7 s</td><td>8.5 s</td><td>11.0 s</td><td>882 ms</td><td title="Against gurobipy, addLConstr loop">8.8x</td></tr>
+<tr class="run"><td>run 1</td><td>7.7 s</td><td>8.5 s</td><td>11.0 s</td><td>885 ms</td><td></td></tr>
+<tr class="run"><td>run 2</td><td>7.7 s</td><td>8.5 s</td><td>11.0 s</td><td>879 ms</td><td></td></tr>
+<tr class="run"><td>run 3</td><td>7.7 s</td><td>8.6 s</td><td>10.9 s</td><td>884 ms</td><td></td></tr>
+</tbody>
+<tbody>
+<tr class="summary"><td><label title="Show each run"><input type="checkbox" aria-label="Show each run at 10,000,000 rows">10,000,000</label></td><td>90.8 s</td><td>99.3 s</td><td>146.2 s</td><td>10.2 s</td><td title="Against gurobipy, addLConstr loop">8.9x</td></tr>
+<tr class="run"><td>run 1</td><td>90.5 s</td><td>99.0 s</td><td>146.0 s</td><td>10.2 s</td><td></td></tr>
+<tr class="run"><td>run 2</td><td>91.2 s</td><td>99.6 s</td><td>145.9 s</td><td>10.2 s</td><td></td></tr>
+<tr class="run"><td>run 3</td><td>90.7 s</td><td>99.3 s</td><td>146.6 s</td><td>10.2 s</td><td></td></tr>
 </tbody>
 </table>
 </div>
 
-Times are the median of three runs after an untimed warm-up, for building the whole model including the final
-`update()`; expand a size to see each run. The speedup divides the median of the faster plain gurobipy build, which
-was the `addLConstr` loop at every size, by polarobi's. All four builds produced the same `Fingerprint`, and the
-same variable and constraint names, at every size. At a thousand rows polarobi's fixed cost per call, mostly polars
-planning its queries, about evens out what it saves.
+Times are the mean of three runs after an untimed warm-up, for building the whole model including the final
+`update()`; expand a size to see each run. The speedup divides the mean of the next fastest build by polarobi's, and
+hovering it names that build: the gurobipy `addLConstr` loop at every size. All four builds produced the same
+`Fingerprint`, and the same variable and constraint names, at every size.
 
 ## Where the Time Goes
 
 <div style="text-align: center" markdown>
 
-![Time per phase at 1M rows: variables 2.2 s with the gurobipy loop, 2.1 s with addConstrs, 3.9 s with gurobipy-pandas and 0.7 s with polarobi; constraints 5.0 s, 6.5 s, 15.0 s and 0.5 s](img/benchmark-phases-light.svg#only-light)
-![Time per phase at 1M rows: variables 2.2 s with the gurobipy loop, 2.1 s with addConstrs, 3.9 s with gurobipy-pandas and 0.7 s with polarobi; constraints 5.0 s, 6.5 s, 15.0 s and 0.5 s](img/benchmark-phases-dark.svg#only-dark)
+![Time per phase at 10M rows: variables 24.7 s with the gurobipy loop, 24.9 s with addConstrs, 24.9 s with gurobipy-pandas and 5.1 s with polarobi; constraints 66.0 s, 74.4 s, 121.1 s and 5.1 s](img/benchmark-phases-light.svg#only-light)
+![Time per phase at 10M rows: variables 24.7 s with the gurobipy loop, 24.9 s with addConstrs, 24.9 s with gurobipy-pandas and 5.1 s with polarobi; constraints 66.0 s, 74.4 s, 121.1 s and 5.1 s](img/benchmark-phases-dark.svg#only-dark)
 
 </div>
 
@@ -67,8 +72,8 @@ Constraints are where the other builds lose most: every term is an entry in a `L
 separate Python object on its way to Gurobi. In the plain gurobipy builds each term is also a tuple lookup into a
 `tupledict`; `addConstrs` adds a comparison object per constraint and its own bookkeeping on top. gurobipy-pandas
 builds its expressions with pandas arithmetic over Series of `Var` objects and then adds one constraint per row,
-which made it the slowest build at a million rows. polarobi groups the terms in polars and hands each family to
-Gurobi in one call. For variables, all builds create one gurobipy handle per variable, which is most of polarobi's
+which made it the slowest build from a million rows on. polarobi groups the terms in polars and hands each family to
+Gurobi in one call. For variables, all builds create one gurobipy handle per variable, which is half of polarobi's
 remaining time; see [How it Works](concepts/how_it_works.md#registering-handles-with-gurobipy).
 
 ## The Model
@@ -98,6 +103,20 @@ before the clock starts. It adds variables with one `addMVar` call, but constrai
 
 Nothing is solved, so no license size limits apply.
 
+## The Machine
+
+The results on this page come from a virtual machine on Google Cloud, so that anyone can rerun them on the same
+hardware:
+
+- **Machine:** `c4-highmem-16` in `europe-west1-c`, an Intel Granite Rapids CPU with one vCPU per core, limited to 4
+  visible cores, and 124 GB of memory.
+- **System:** Ubuntu 26.04 minimal (`ubuntu-minimal-2604-resolute-amd64`), Linux 7.0.0-1011-gcp.
+- **Software:** Python 3.14.7, polarobi 0.1.4, polars 2.0.0, gurobipy 14.0.0b1, gurobipy-pandas 1.2.2 and pandas
+  3.0.6.
+
+All its cores are of one type, so the run needs no CPU pinning. From a million rows on, the three runs of every build
+stayed within 1% of each other; below that, where a run takes milliseconds, within 8%.
+
 ## Caveats
 
 - **Your mileage may vary.** Results will differ across hardware,
@@ -112,11 +131,12 @@ The benchmark lives in `benchmarks/` in the repository:
 
 ```shell
 uv run --group bench python benchmarks/build_model.py --sizes 1000 10000 100000 1000000 10000000
-uv run --group bench python benchmarks/plot.py benchmarks/results/windows.json
+uv run --group bench python benchmarks/plot.py benchmarks/results/results.json
 ```
 
 The first command builds the model all four ways at each size, checks that the fingerprints and names match, and
-writes the timings, machine, package versions and settings to `benchmarks/results/<system>.json`. Without
+writes the timings, machine, package versions and settings to `benchmarks/results/<system>.json`; the results on
+this page are `../benchmarks/results/gcp-c4-highmem-16.json`. Without
 `--sizes` it runs 10K to 10M rows; 10M rows need well over 11 GB of free memory, since gurobipy-pandas holds a
 pandas copy of the inputs. `--repeats` and `--seed` change the run. The second command draws the figures on this
 page from a result file and prints the table.
