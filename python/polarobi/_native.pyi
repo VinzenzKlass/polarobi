@@ -14,11 +14,11 @@ def add_vars(
 ) -> None: ...
 def add_constrs(
     cmodel: Any,
-    cbeg: pl.Series,
-    cind: pl.Series,
-    cval: pl.Series,
+    vars: pl.Series,
+    coefs: pl.Series,
     sense: pl.Series,
     rhs: pl.Series,
+    n_vars: int,
     names: pl.Series | None = None,
 ) -> None: ...
 

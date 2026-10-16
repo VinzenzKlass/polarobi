@@ -71,8 +71,9 @@ class GurobiFrame:
         appearance. Constraints keep the order of `rows` and terms their order in this frame, so
         equal inputs build identical models. Rows without terms are dropped unless `drop_empty`
         is False; a Series for `sense` or `rhs` lines up with `rows` as given. Rows may repeat a
-        key, each then gets all of its terms, as with `Model.addConstrs`. Without key columns
-        (`by=[]`), all terms form a single constraint.
+        key, each then gets all of its terms, as with `Model.addConstrs`. A null key is a key
+        like any other: its terms form one constraint, named with `None` as gurobipy names a
+        `None` key. Without key columns (`by=[]`), all terms form a single constraint.
 
         A variable repeated within a row has its coefficients summed left to right, and a
         right-hand side of -0.0 becomes 0.0, as in gurobipy.

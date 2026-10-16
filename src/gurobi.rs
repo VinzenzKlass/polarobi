@@ -128,11 +128,22 @@ impl Api {
                 CStr::from_ptr(msg).to_string_lossy().into_owned()
             }
         };
-        let err = py
-            .import("gurobipy")?
-            .getattr("GurobiError")?
-            .call1((rc, msg))?;
-        Err(PyErr::from_value(err))
+        Err(error(py, rc, &msg))
+    }
+}
+
+/// `GRB_ERROR_INDEX_OUT_OF_RANGE`
+pub const INDEX_OUT_OF_RANGE: c_int = 10006;
+
+/// A `gurobipy.GurobiError` with Gurobi error code `code`.
+pub fn error(py: Python<'_>, code: c_int, msg: &str) -> PyErr {
+    let err = py
+        .import("gurobipy")
+        .and_then(|m| m.getattr("GurobiError"))
+        .and_then(|cls| cls.call1((code, msg)));
+    match err {
+        Ok(err) => PyErr::from_value(err),
+        Err(err) => err,
     }
 }
 

@@ -33,7 +33,6 @@ _ROW = "__polarobi_row"
 _INDEX_TYPES = (pl.Int32, pl.UInt32)
 # gurobipy reports values at or beyond Gurobi's infinity as Python infinities.
 _INFINITY = gp.GRB.INFINITY
-_INDEX_OUT_OF_RANGE = 10006  # GRB_ERROR_INDEX_OUT_OF_RANGE
 
 
 def add_vars(
@@ -85,11 +84,18 @@ def add_constrs(
     if not by:
         return _add_constr_over_all(model, terms, rows, sense, rhs, name, var, coef, idx)
     _sync(model)
-    terms = terms.select(
-        *by, pl.col(var).alias(_ROW + "var"), _expr(coef).cast(pl.Float64).alias(_ROW + "coef")
-    )
+    vars_, coefs = _ROW + "vars", _ROW + "coefs"
+    index = pl.col(var)
+    if not isinstance(terms.schema.get(var), _INDEX_TYPES):
+        index = index.cast(pl.Int32)
+    terms = terms.select(*by, index.alias(vars_), _expr(coef).cast(pl.Float64).alias(coefs))
+    # One list of variables and one of coefficients per key, keys in order of first appearance
+    # and terms in their order. The lists are the CSR Gurobi takes: Arrow stores a list column
+    # as one flat array of items plus the offset of each row into it.
+    grouped = terms.group_by(by, maintain_order=True).agg(vars_, coefs)
+    given = rows is not None
     if rows is None:
-        rows = terms.select(by).unique(maintain_order=True)
+        rows = grouped
     # Per-row inputs are evaluated against `rows` as given, so a Series lines up with it, and
     # are then dropped along with rows that have no terms. gurobipy turns a -0.0 bound into 0.0
     # (polars simplifies `x + 0.0` to `x`, so that does not work here).
@@ -103,25 +109,26 @@ def add_constrs(
         _sense(rows, sense).alias(_ROW + "sense"),
         *([] if names is None else [names.alias(_ROW + "name")]),
     )
-    if drop_empty:
-        rows = rows.join(terms.select(by), on=by, how="semi", maintain_order="left")
-    rows = rows.with_row_index(_ROW)
-    terms = terms.join(rows.select(*by, _ROW), on=by, how="inner", maintain_order="left").sort(
-        _ROW, maintain_order=True
-    )
-    cbeg = terms.get_column(_ROW).search_sorted(rows.get_column(_ROW), side="left")
-    cind = _indices(terms.get_column(_ROW + "var"))
-    # Gurobi rejects these too, but without saying what is wrong.
-    if cind.len() and not (0 <= _int(cind.min()) and _int(cind.max()) < len(model._internal_vars)):
-        raise gp.GurobiError(_INDEX_OUT_OF_RANGE, f"Variable index in {var!r} out of range")
+    if given:
+        # Every row gets the lists of its key, so repeated keys get them again. A null key is a
+        # key like any other.
+        rows = rows.join(
+            grouped,
+            on=by,
+            how="inner" if drop_empty else "left",
+            maintain_order="left",
+            nulls_equal=True,
+        )
+        if not drop_empty:
+            rows = rows.with_columns(pl.col(vars_).fill_null([]), pl.col(coefs).fill_null([]))
     n, start = rows.height, len(model._constrs)
     _native.add_constrs(
         model._cmodel,
-        cbeg.cast(pl.UInt64),
-        cind,
-        terms.get_column(_ROW + "coef"),
+        rows.get_column(vars_),
+        rows.get_column(coefs),
         rows.get_column(_ROW + "sense"),
         rows.get_column(_ROW + "rhs"),
+        len(model._internal_vars),
         names=None if names is None else rows.get_column(_ROW + "name"),
     )
     _handles.register(model, "constr", start, n)
@@ -213,11 +220,6 @@ def _sync(model: gp.Model) -> None:
 
 def _index(start: int, n: int) -> pl.Expr:
     return pl.int_range(start, start + n, dtype=pl.UInt32)
-
-
-def _int(value: Any) -> int:
-    """A scalar read from an integer Series, which polars types loosely."""
-    return int(value)
 
 
 def _indices(index: pl.Series) -> pl.Series:

@@ -14,8 +14,8 @@ use pyo3::types::{PyCapsule, PyTuple};
 use pyo3_arrow::PyChunkedArray;
 use pyo3_arrow::ffi::to_array_pycapsules;
 
-use crate::columns;
 use crate::gurobi::{GrbModel, api};
+use crate::{columns, gurobi};
 
 /// The `GRBmodel*` behind gurobipy's `Model._cmodel` capsule.
 fn model_ptr(cmodel: &Bound<'_, PyAny>) -> PyResult<*mut GrbModel> {
@@ -94,32 +94,56 @@ pub fn add_vars(
     api.check(cmodel.py(), model, rc)
 }
 
-/// Add constraints from CSR: row `i` holds `cind[cbeg[i]..cbeg[i+1]]` with coefficients `cval`.
+/// Add one constraint per row of the List columns `vars` and `coefs`, which hold its terms. Their
+/// Arrow offsets are the row starts of the CSR that `GRBXaddconstrs` takes, and their items the
+/// variable indices and coefficients, so nothing is reshaped. `n_vars` is the model's variable
+/// count, against which every index is checked.
 #[pyfunction]
-#[pyo3(signature = (cmodel, cbeg, cind, cval, sense, rhs, names=None))]
+#[pyo3(signature = (cmodel, vars, coefs, sense, rhs, n_vars, names=None))]
+#[allow(clippy::too_many_arguments)]
 pub fn add_constrs(
     cmodel: &Bound<'_, PyAny>,
-    cbeg: PyChunkedArray,
-    cind: PyChunkedArray,
-    cval: PyChunkedArray,
+    vars: PyChunkedArray,
+    coefs: PyChunkedArray,
     sense: PyChunkedArray,
     rhs: PyChunkedArray,
+    n_vars: usize,
     names: Option<PyChunkedArray>,
 ) -> PyResult<()> {
     let (api, model) = (api()?, model_ptr(cmodel)?);
-    let cbeg = columns::offsets("cbeg", &cbeg)?;
-    let n = cbeg.len();
-    let cind = columns::indices("cind", &cind, None)?;
-    let cval = columns::f64s("cval", &cval, Some(cind.len()))?;
+    let vars = columns::Lists::new("vars", &vars)?;
+    let coefs = columns::Lists::new("coefs", &coefs)?;
+    if vars.cbeg() != coefs.cbeg() || vars.nnz() != coefs.nnz() {
+        return Err(PyValueError::new_err(
+            "vars and coefs must hold lists of the same lengths",
+        ));
+    }
+    let n = vars.rows();
+    let n_constrs = c_int_len("constraints", n)?;
+    let cind = vars.indices()?;
+    let cval = coefs.f64s()?;
+    let cbeg = vars.cbeg();
     // Gurobi trusts cbeg blindly, so a bad offset would read out of bounds.
     let mut prev = 0;
-    for &beg in cbeg.iter() {
+    for &beg in cbeg {
         if beg < prev || beg > cind.len() {
             return Err(PyValueError::new_err(
-                "cbeg must be non-decreasing and within cind",
+                "list offsets must be non-decreasing and within the items",
             ));
         }
         prev = beg;
+    }
+    // Gurobi rejects an unknown variable too, but without saying which.
+    let (low, high) = cind
+        .iter()
+        .fold((0, -1), |(lo, hi), &v| (lo.min(v), hi.max(v)));
+    if low < 0 || usize::try_from(high).is_ok_and(|high| high >= n_vars) {
+        let bad = if low < 0 { low } else { high };
+        return Err(gurobi::error(
+            cmodel.py(),
+            gurobi::INDEX_OUT_OF_RANGE,
+            &format!("Variable index {bad} out of range: the model has {n_vars} variables"),
+        ));
     }
     let sense = columns::chars("sense", &sense, Some(n))?;
     let rhs = columns::f64s("rhs", &rhs, Some(n))?;
@@ -128,14 +152,15 @@ pub fn add_constrs(
         .map(|c| columns::cstrings("names", c, Some(n)))
         .transpose()?;
     let names = name_ptrs(&names);
-    let (cbeg, cind, cval) = match merge_repeats(&cbeg, &cind, &cval) {
+    let width = usize::try_from(high + 1).unwrap_or_default();
+    let (cbeg, cind, cval) = match merge_repeats(cbeg, &cind, &cval, width) {
         Some((beg, ind, val)) => (Cow::Owned(beg), Cow::Owned(ind), Cow::Owned(val)),
-        None => (cbeg, cind, cval),
+        None => (Cow::Borrowed(cbeg), cind, cval),
     };
     let rc = unsafe {
         (api.xaddconstrs)(
             model,
-            c_int_len("constraints", n)?,
+            n_constrs,
             cind.len(),
             cbeg.as_ptr(),
             cind.as_ptr(),
@@ -152,12 +177,9 @@ type Csr = (Vec<usize>, Vec<c_int>, Vec<f64>);
 
 /// Gurobi rejects a variable that appears more than once in a row. Merge repeats by summing their
 /// coefficients left to right, in the order of the terms; `None` if there are none. Gurobi itself
-/// then drops coefficients that are zero or tiny.
-fn merge_repeats(cbeg: &[usize], cind: &[c_int], cval: &[f64]) -> Option<Csr> {
-    if cind.iter().any(|&v| v < 0) {
-        return None; // Gurobi reports the invalid index.
-    }
-    let width = cind.iter().map(|&v| v as usize + 1).max().unwrap_or(0);
+/// then drops coefficients that are zero or tiny. Every index in `cind` is in `0..width`, and
+/// there are at most `c_int::MAX` rows.
+fn merge_repeats(cbeg: &[usize], cind: &[c_int], cval: &[f64], width: usize) -> Option<Csr> {
     let rows = || {
         let ends = cbeg
             .iter()
@@ -166,12 +188,14 @@ fn merge_repeats(cbeg: &[usize], cind: &[c_int], cval: &[f64]) -> Option<Csr> {
             .chain(std::iter::once(cind.len()));
         cbeg.iter().copied().zip(ends)
     };
-    // `seen[v]` is the last row that used column `v`, offset by one so zero means none.
-    let mut seen = vec![0usize; width];
+    // `seen[v]` is the last row that used column `v`, offset by one so zero means none. The
+    // table is as wide as the model, so it is kept to four bytes per column.
+    let mut seen = vec![0u32; width];
     let repeats = rows().enumerate().any(|(row, (start, end))| {
+        let row = row as u32 + 1;
         cind[start..end]
             .iter()
-            .any(|&v| std::mem::replace(&mut seen[v as usize], row + 1) == row + 1)
+            .any(|&v| std::mem::replace(&mut seen[v as usize], row) == row)
     });
     if !repeats {
         return None;
@@ -180,13 +204,14 @@ fn merge_repeats(cbeg: &[usize], cind: &[c_int], cval: &[f64]) -> Option<Csr> {
     let mut slot = vec![0usize; width];
     let (mut beg, mut ind, mut val) = (Vec::with_capacity(cbeg.len()), Vec::new(), Vec::new());
     for (row, (start, end)) in rows().enumerate() {
+        let row = row as u32 + 1;
         beg.push(ind.len());
         for (&v, &coef) in cind[start..end].iter().zip(&cval[start..end]) {
             let column = v as usize;
-            if seen[column] == row + 1 {
+            if seen[column] == row {
                 val[slot[column]] += coef;
             } else {
-                seen[column] = row + 1;
+                seen[column] = row;
                 slot[column] = ind.len();
                 ind.push(v);
                 val.push(coef);

@@ -85,8 +85,8 @@ Both build each expression once; the also common `x.sum(order, "*", "*")` per co
 The benchmark lives in `benchmarks/` in the repository:
 
 ```shell
-uv run python benchmarks/build_model.py --sizes 1000 10000 100000 1000000 10000000 --cpus 0,2,4,6,8,10
-uv run --group bench python benchmarks/plot.py benchmarks/results/windows.json
+uv run python benchmarks/build_model.py --sizes 1000 10000 100000 1000000 10000000
+uv run --group bench python benchmarks/plot.py benchmarks/results/results.json
 ```
 
 The first command builds the model all three ways at each size, checks that the fingerprints match, and writes the
