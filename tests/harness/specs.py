@@ -12,6 +12,7 @@ import polars as pl
 
 type IntoColumn = pl.Series | pl.Expr | str | float | int
 type Sense = Literal["<", "<=", ">", ">=", "=", "=="]
+type VType = Literal["C", "B", "I", "S", "N"]
 type Kind = Literal["var", "constr"]
 
 
@@ -22,7 +23,7 @@ class AddVars:
     lb: IntoColumn | None = None
     ub: IntoColumn | None = None
     obj: IntoColumn | None = None
-    vtype: str | None = None
+    vtype: VType | None = None
     name: str | pl.Expr | None = None
     idx: str = "idx"
 

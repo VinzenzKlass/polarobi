@@ -8,6 +8,7 @@ from polarobi import _handles, _native
 
 type IntoColumn = pl.Series | pl.Expr | str | float | int
 type Sense = Literal["<", "<=", ">", ">=", "=", "=="]
+type VType = Literal["C", "B", "I", "S", "N"]
 
 _SENSE = {
     "<": ord("<"),
@@ -30,7 +31,7 @@ def add_vars(
     lb: IntoColumn | None = None,
     ub: IntoColumn | None = None,
     obj: IntoColumn | None = None,
-    vtype: str | None = None,
+    vtype: VType | None = None,
     name: str | pl.Expr | None = None,
     idx: str = "idx",
 ) -> pl.DataFrame:
