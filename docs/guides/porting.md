@@ -17,6 +17,31 @@ operation. This guide shows the translation on a typical capacity constraint, th
 Demand rows are assigned to vendors per week. Each vendor week has a minimum quantity, which may be breached at a
 penalty, and a maximum quantity. Vendor weeks without any demand get no constraints.
 
+??? info "Setup"
+    ```python
+    import gurobipy as gp
+    import polars as pl
+    from polarobi import GurobiFrame as grb
+
+    demand = pl.DataFrame(
+        {
+            "order": ["o1", "o2", "o3"],
+            "vendor_code": ["V1", "V1", "V2"],
+            "ex_go_date": ["20260101", "20260101", "20260101"],
+            "quantity": [30.0, 45.0, 20.0],
+        }
+    )
+    capacity = pl.DataFrame(
+        {
+            "vendor_code": ["V1", "V2", "V3"],
+            "ex_go_date": ["20260101", "20260101", "20260101"],
+            "min_qty": [50.0, 25.0, 10.0],
+            "max_qty": [100.0, 80.0, 60.0],
+        }
+    )
+    model = gp.Model()
+    ```
+
 === "gurobipy"
     ```python
     keys = ("vendor_code", "ex_go_date")
@@ -36,19 +61,16 @@ penalty, and a maximum quantity. Vendor weeks without any demand get no constrai
 
 === "polarobi"
     ```python
-    keys = ["vendor_code", "ex_go_date"]
+    keys = ("vendor_code", "ex_go_date")
     x = grb(demand).add_vars(model, by=["order", *keys], vtype="B", name="x")
     breach = grb(capacity).add_vars(model, by=keys, name="breach")
 
     quantity = x.select(*keys, "idx", coef=pl.col("quantity"))
-    # Only vendor weeks with demand get constraints.
     rows = capacity.join(quantity.select(keys), on=keys, how="semi")
+    comb = pl.concat((quantity, breach.select(*keys, "idx", coef=1.0)), how="vertical_relaxed")
 
-    minimum = pl.concat(
-        [quantity, breach.select(*keys, "idx", coef=pl.lit(1.0))], how="vertical_relaxed"
-    )
-    grb(minimum).add_constrs(model, rows, by=keys, sense=">=", rhs="min_qty", coef="coef", name="min")
-    grb(quantity).add_constrs(model, rows, by=keys, sense="<=", rhs="max_qty", coef="coef", name="max")
+    grb(comb).add_constrs(model, rows, by=keys, sense=">=", rhs="min_qty", coef="coef")
+    grb(quantity).add_constrs(model, rows, by=keys, sense="<=", rhs="max_qty", coef="coef")
     ```
 
 What changed:

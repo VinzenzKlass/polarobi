@@ -1,3 +1,6 @@
+/* Expand JetBrains Mono to include box-drawing glyphs (U+2500-257F). */
+@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono&text=%E2%94%8C%E2%94%80%E2%94%AC%E2%94%90%E2%94%82%E2%94%86%E2%95%9E%E2%95%90%E2%95%AA%E2%95%A1%E2%94%94%E2%94%B4%E2%94%98&display=swap");
+
 :root, [data-md-color-scheme=default] {
     --md-accent-fg-color: #0075ff;
     --md-accent-fg-color--transparent: #1175ff1F;
@@ -88,7 +91,7 @@
 }
 
 .md-grid {
-    max-width: 65rem;
+    max-width: 67rem;
 }
 
 /* The benchmark table, printed by benchmarks/plot.py: per size a summary row whose checkbox shows

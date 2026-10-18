@@ -33,6 +33,7 @@ nav = [
 ]
 
 [project.theme]
+font.code = "JetBrains Mono"
 favicon = "img/fav.webp"
 logo = "img/fav.webp"
 custom_dir = "docs/overrides"
