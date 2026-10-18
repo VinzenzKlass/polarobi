@@ -1,0 +1,15 @@
+* text=auto eol=lf
+
+uv.lock linguist-generated
+Cargo.lock linguist-generated
+benchmarks/results/** linguist-generated
+docs/img/*.svg linguist-generated
+docs/js/assets/** linguist-vendored
+benchmarks/** linguist-documentation
+tests/** linguist-documentation
+*.pyi linguist-generated
+
+*.rs diff=rust
+*.py diff=python
+*.pyi diff=python
+

@@ -33,6 +33,7 @@ nav = [
 ]
 
 [project.theme]
+font.code = "JetBrains Mono"
 favicon = "img/fav.webp"
 logo = "img/fav.webp"
 custom_dir = "docs/overrides"
@@ -80,7 +81,7 @@ minify_html = true
 
 [project.plugins.mkdocstrings.handlers.python]
 paths = ["python"]
-options.docstring_style = "google"
+options.docstring_style = "sphinx"
 options.group_by_category = false
 options.line_length = 80
 options.members_order = "source"

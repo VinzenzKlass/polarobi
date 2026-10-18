@@ -5,7 +5,7 @@ import gurobipy as gp
 import polars as pl
 
 from polarobi import _api
-from polarobi._api import IntoColumn, Sense
+from polarobi._api import IntoColumn, Sense, VType
 
 
 @pl.api.register_dataframe_namespace("grb")
@@ -21,20 +21,24 @@ class GurobiFrame:
         lb: IntoColumn | None = None,
         ub: IntoColumn | None = None,
         obj: IntoColumn | None = None,
-        vtype: str | None = None,
+        vtype: VType | None = None,
         name: str | pl.Expr | None = None,
         idx: str = "idx",
     ) -> pl.DataFrame:
         """
         Add one variable per row, returning this frame with the variables' column index `idx`.
-
-        `lb`, `ub` and `obj` take a scalar, a column name, an expression or a Series; omitted they
-        keep Gurobi's defaults (0, infinity, 0). A `name` string names variables gurobipy-style
-        from the key columns `by` (default: all columns), e.g. `x[a,b]`, formatting keys as
-        gurobipy does (`True`, `1e-07`, `None` for nulls); an expression names them freely, a
-        null name leaves a variable unnamed.
-
         Like `Model.addVars`, raises `KeyError` for duplicate keys, but before adding anything.
+
+        :param model: The Gurobi model to add variables to.
+        :param by: Columns to use as keys for variable names.
+        :param lb: Lower bound for variables.
+        :param ub: Upper bound for variables.
+        :param obj: Objective coefficient for variables.
+        :param vtype: Variable type to create: `C` (continuous), `B` (binary),
+            `I` (integer), `S` (semi-continuous) or `N` (semi-integer).
+        :param name: Name for variables.
+        :param idx: Column name for variable indices.
+        :return: DataFrame with added variables.
         """
         return _api.add_vars(
             model, self._df, by=by, lb=lb, ub=ub, obj=obj, vtype=vtype, name=name, idx=idx
@@ -57,21 +61,19 @@ class GurobiFrame:
         """
         Add one linear constraint per group of this frame's terms, `sum(coef * x[var]) <sense> rhs`.
 
-        This frame holds one row per term: the group keys `by` and the variable index `var`.
-        `coef` is a scalar, a column name, an expression or a Series; it defaults to 1, as in
-        `quicksum`. `rows` holds one row per constraint with the keys `by`, against which `sense`,
-        `rhs` and `name` are evaluated; it defaults to the distinct keys of the terms, in order of
-        appearance. Constraints keep the order of `rows` and terms their order in this frame, so
-        equal inputs build identical models. Rows without terms are dropped unless `drop_empty`
-        is False; a Series for `sense` or `rhs` lines up with `rows` as given. Rows may repeat a
-        key, each then gets all of its terms, as with `Model.addConstrs`. A null key is a key
-        like any other: its terms form one constraint, named with `None` as gurobipy names a
-        `None` key. Without key columns (`by=[]`), all terms form a single constraint.
-
-        A variable repeated within a row has its coefficients summed left to right, and a
-        right-hand side of -0.0 becomes 0.0, as in gurobipy.
-
-        Returns `rows` with the constraints' row index `idx`.
+        :param model: The Gurobi model to add constraints to.
+        :param rows: DataFrame with one row per constraint containing the keys `by`. Defaults to
+            distinct keys of the terms in order of appearance.
+        :param by: Columns to use as keys for grouping terms into constraints.
+        :param sense: Constraint sense: `<` or `<=` (less than or equal), `>` or `>=`
+            (greater than or equal), or `=` or `==` (equal).
+        :param rhs: Right-hand side for constraints.
+        :param name: Name for constraints.
+        :param var: Column name for variable indices in this frame.
+        :param coef: Coefficient for each term.
+        :param drop_empty: Whether to drop rows in `rows` that have no matching terms.
+        :param idx: Column name for constraint indices.
+        :return: DataFrame with added constraints.
         """
         return _api.add_constrs(
             model,
@@ -96,8 +98,14 @@ class GurobiFrame:
         dtype: type[pl.Float64] | type[pl.Int32] = pl.Float64,
     ) -> pl.DataFrame:
         """
-        This frame with `attr` (e.g. "X", "Pi", "UB") of its variables or constraints added.
+        Return this frame with `attr` (e.g. "X", "Pi", "UB") of its variables or constraints added.
         Values at Gurobi's infinity read as `inf`, as in gurobipy.
+
+        :param model: The Gurobi model to read the attribute from.
+        :param attr: Name of the Gurobi attribute to retrieve.
+        :param idx: Column name for variable or constraint indices.
+        :param dtype: Polars DType for the returned attribute column (`pl.Float64` or `pl.Int32`).
+        :return: DataFrame with the attribute column added.
         """
         values = _api.get_attr(model, attr, self._df.get_column(idx), dtype=dtype)
         return self._df.with_columns(values)
@@ -106,8 +114,13 @@ class GurobiFrame:
         self, model: gp.Model, attr: str, values: pl.Series | str | float, *, idx: str = "idx"
     ) -> None:
         """
-        Set `attr` of this frame's variables or constraints. `values` is a scalar, a Series or a
-        column name; integer values use Gurobi's int attribute API.
+        Set `attr` of this frame's variables or constraints.
+        Integer values use Gurobi's int attribute API.
+
+        :param model: The Gurobi model to set the attribute on.
+        :param attr: Name of the Gurobi attribute to set.
+        :param values: Attribute values as a scalar, a Series, or a column name.
+        :param idx: Column name for variable or constraint indices.
         """
         if isinstance(values, str):
             values = self._df.get_column(values)
@@ -124,7 +137,14 @@ class GurobiFrame:
     def handles(
         self, model: gp.Model, *, idx: str = "idx", kind: Literal["var", "constr"] = "var"
     ) -> list[gp.Var] | list[gp.Constr]:
-        """The gurobipy `Var` / `Constr` handles of this frame's rows."""
+        """
+        Get the gurobipy `Var` or `Constr` handles of this frame's rows.
+
+        :param model: The Gurobi model the variables or constraints belong to.
+        :param idx: Column name for variable or constraint indices.
+        :param kind: Handle type to return: `var` (variable) or `constr` (constraint).
+        :return: List of Gurobi handles.
+        """
         return _api.handles(model, self._df.get_column(idx), kind=kind)
 
     @overload
@@ -149,7 +169,13 @@ class GurobiFrame:
         kind: Literal["var", "constr"] = "var",
     ) -> gp.tupledict[Any, gp.Var] | gp.tupledict[Any, gp.Constr]:
         """
-        A gurobipy `tupledict` of this frame's handles keyed like `addVars` keys it: by the
-        values of `by` for one column, else by tuples.
+        Return a gurobipy `tupledict` of this frame's handles keyed like `Model.addVars` keys it:
+        by the values of `by` for one column, else by tuples.
+
+        :param model: The Gurobi model the variables or constraints belong to.
+        :param by: Column or columns to use as keys.
+        :param idx: Column name for variable or constraint indices.
+        :param kind: Handle type to return: `var` (variable) or `constr` (constraint).
+        :return: `tupledict` mapping keys to Gurobi handles.
         """
         return _api.tupledict(model, self._df, by, idx=idx, kind=kind)

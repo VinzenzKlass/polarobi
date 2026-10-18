@@ -24,9 +24,9 @@ import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.axes import Axes  # noqa: E402
 from matplotlib.ticker import FuncFormatter  # noqa: E402
 
-_IMG = Path(__file__).parents[1] / "docs" / "img"
+_img = Path(__file__).parents[1] / "docs" / "img"
 # Series in legend order, with their labels. polarobi's label goes first where labels compete.
-_BUILDERS = {
+_builders = {
     "gurobipy_loop": "gurobipy, addLConstr loop",
     "gurobipy_addconstrs": "gurobipy, addConstrs",
     "gurobipy_pandas": "gurobipy-pandas",
@@ -125,7 +125,7 @@ def build_time(results: Sequence[dict[str, Any]], theme: Theme, out: Path) -> No
     fig.patch.set_alpha(0)
     _style(ax, theme)
     ends: dict[str, tuple[float, float]] = {}
-    for builder, label in _BUILDERS.items():
+    for builder, label in _builders.items():
         rows = [r for r in results if r["builder"] == builder]
         sizes = [r["rows"] for r in rows]
         totals = [_mean(r) for r in rows]
@@ -194,7 +194,7 @@ def phases(results: Sequence[dict[str, Any]], theme: Theme, out: Path) -> None:
     rows = {r["builder"]: r for r in results if r["rows"] == largest}
     groups = (("Variables", "variables_s"), ("Constraints", "constraints_s"))
     # Tall enough for one 24px bar per build in each group, plus the title and the legend.
-    fig, ax = plt.subplots(figsize=(7.2, 1.6 + 0.6 * len(_BUILDERS)), dpi=100)
+    fig, ax = plt.subplots(figsize=(7.2, 1.6 + 0.6 * len(_builders)), dpi=100)
     fig.patch.set_alpha(0)
     _style(ax, theme, grid="x")
     ax.spines["bottom"].set_visible(False)
@@ -206,8 +206,8 @@ def phases(results: Sequence[dict[str, Any]], theme: Theme, out: Path) -> None:
     # Bars at most 24px thick with a 2px gap between neighbours, in data units.
     per_px = len(groups) / ax.get_window_extent().height
     height, gap = 24 * per_px, 2 * per_px
-    count = len(_BUILDERS)
-    for i, (builder, label) in enumerate(_BUILDERS.items()):
+    count = len(_builders)
+    for i, (builder, label) in enumerate(_builders.items()):
         offsets = [g + (i - (count - 1) / 2) * (height + gap) for g in range(len(groups))]
         values = [rows[builder][key] for _, key in groups]
         ax.barh(offsets, values, height=height, color=theme.series[builder], label=label, zorder=3)
@@ -244,7 +244,7 @@ def table(results: Sequence[dict[str, Any]]) -> str:
         "gurobipy_pandas": "gurobipy-pandas",
         "polarobi": "polarobi",
     }
-    head = "".join(f"<th>{headers[b]}</th>" for b in _BUILDERS)
+    head = "".join(f"<th>{headers[b]}</th>" for b in _builders)
     lines = [
         '<div class="benchmark-table">',
         "<table>",
@@ -253,10 +253,10 @@ def table(results: Sequence[dict[str, Any]]) -> str:
     for size in sorted({r["rows"] for r in results}):
         rows = {r["builder"]: r for r in results if r["rows"] == size}
         # Against the next fastest build by mean, whichever that is at this size.
-        others = [b for b in _BUILDERS if b != "polarobi"]
+        others = [b for b in _builders if b != "polarobi"]
         nearest = min(others, key=lambda b: _mean(rows[b]))
         speedup = _mean(rows[nearest]) / _mean(rows["polarobi"])
-        cells = "".join(f"<td>{_seconds(_mean(rows[b]))}</td>" for b in _BUILDERS)
+        cells = "".join(f"<td>{_seconds(_mean(rows[b]))}</td>" for b in _builders)
         toggle = (
             f'<label title="Show each run"><input type="checkbox"'
             f' aria-label="Show each run at {size:,} rows">{size:,}</label>'
@@ -264,14 +264,14 @@ def table(results: Sequence[dict[str, Any]]) -> str:
         lines += [
             "<tbody>",
             f'<tr class="summary"><td>{toggle}</td>{cells}'
-            f'<td title="Against {_BUILDERS[nearest]}">{speedup:.1f}x</td></tr>',
+            f'<td title="Against {_builders[nearest]}">{speedup:.1f}x</td></tr>',
         ]
         for run in range(max(len(r["runs_total_s"]) for r in rows.values())):
             runs = "".join(
                 f"<td>{_seconds(rows[b]['runs_total_s'][run])}</td>"
                 if run < len(rows[b]["runs_total_s"])
                 else "<td></td>"
-                for b in _BUILDERS
+                for b in _builders
             )
             lines.append(f'<tr class="run"><td>run {run + 1}</td>{runs}<td></td></tr>')
         lines.append("</tbody>")
@@ -292,10 +292,10 @@ def main() -> None:
             "svg.fonttype": "none",  # Text stays text and uses the page's font.
         }
     )
-    _IMG.mkdir(parents=True, exist_ok=True)
+    _img.mkdir(parents=True, exist_ok=True)
     for theme in _THEMES:
-        build_time(results, theme, _IMG / f"benchmark-build-time-{theme.name}.svg")
-        phases(results, theme, _IMG / f"benchmark-phases-{theme.name}.svg")
+        build_time(results, theme, _img / f"benchmark-build-time-{theme.name}.svg")
+        phases(results, theme, _img / f"benchmark-phases-{theme.name}.svg")
     print(table(results))
 
 
