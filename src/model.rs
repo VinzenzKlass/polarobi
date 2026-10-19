@@ -36,10 +36,10 @@ fn opt_ptr<T: Clone>(values: &Option<Cow<'_, [T]>>) -> *const T {
     values.as_deref().map_or(ptr::null(), <[T]>::as_ptr)
 }
 
-fn name_ptrs(names: &Option<Vec<CString>>) -> Option<Vec<*const c_char>> {
-    names
-        .as_ref()
-        .map(|names| names.iter().map(|s| s.as_ptr()).collect())
+/// The `char **` for an optional name column. The shadowed `names` stays alive, so the pointers
+/// are valid for the call that follows.
+fn name_ptrs(names: &Option<columns::CStrings>) -> Option<Vec<*const c_char>> {
+    names.as_ref().map(columns::CStrings::ptrs)
 }
 
 #[pyfunction]
@@ -213,6 +213,12 @@ fn merge_repeats(cbeg: &[usize], cind: &[c_int], cval: &[f64], width: usize) -> 
             .chain(std::iter::once(cind.len()));
         cbeg.iter().copied().zip(ends)
     };
+    // A few short rows against a wide model, the shape of an incremental build, are scanned in
+    // place: a table as wide as the model would cost more to allocate than the rows to merge.
+    let longest = rows().map(|(start, end)| end - start).max().unwrap_or(0);
+    if longest <= SCAN_ROW_LEN && cind.len() < width / 16 {
+        return merge_repeats_by_scan(rows, cind, cval);
+    }
     // `seen[v]` is the last row that used column `v`, offset by one so zero means none. The
     // table is as wide as the model, so it is kept to four bytes per column.
     let mut seen = vec![0u32; width];
@@ -240,6 +246,38 @@ fn merge_repeats(cbeg: &[usize], cind: &[c_int], cval: &[f64], width: usize) -> 
                 slot[column] = ind.len();
                 ind.push(v);
                 val.push(coef);
+            }
+        }
+    }
+    Some((beg, ind, val))
+}
+
+/// Rows up to this long are checked for repeats by a linear scan of the row itself.
+const SCAN_ROW_LEN: usize = 64;
+
+/// `merge_repeats` for short rows: each term is compared with the ones before it in its row.
+fn merge_repeats_by_scan<I>(rows: impl Fn() -> I, cind: &[c_int], cval: &[f64]) -> Option<Csr>
+where
+    I: Iterator<Item = (usize, usize)>,
+{
+    let repeats = rows().any(|(start, end)| {
+        let row = &cind[start..end];
+        (1..row.len()).any(|i| row[..i].contains(&row[i]))
+    });
+    if !repeats {
+        return None;
+    }
+    let (mut beg, mut ind, mut val) = (Vec::new(), Vec::new(), Vec::new());
+    for (start, end) in rows() {
+        beg.push(ind.len());
+        let first = ind.len();
+        for (&v, &coef) in cind[start..end].iter().zip(&cval[start..end]) {
+            match ind[first..].iter().position(|&w| w == v) {
+                Some(at) => val[first + at] += coef,
+                None => {
+                    ind.push(v);
+                    val.push(coef);
+                }
             }
         }
     }
@@ -404,6 +442,29 @@ mod tests {
     }
 
     #[test]
+    fn merge_scans_short_rows_of_wide_models() {
+        // Few terms against a wide model: no table of `width` entries is needed.
+        let width = 1 << 20;
+        let big = (width - 1) as c_int;
+        assert_eq!(merge_repeats(&[0, 2], &[big, 0, 5], &[1.0; 3], width), None);
+        let merged = merge_repeats(
+            &[0, 0, 3],
+            &[big, 0, big, 7, 7],
+            &[1.0, 2.0, 3.0, 4.0, 5.0],
+            width,
+        );
+        assert_eq!(
+            merged,
+            Some((vec![0, 0, 2], vec![big, 0, 7], vec![4.0, 2.0, 9.0]))
+        );
+        // A row longer than the scan limit falls back to the table even in a wide model.
+        let long: Vec<c_int> = (0..=SCAN_ROW_LEN as c_int).chain([0]).collect();
+        let merged = merge_repeats(&[0], &long, &vec![1.0; long.len()], width).unwrap();
+        assert_eq!(merged.1.len(), SCAN_ROW_LEN + 1);
+        assert_eq!(merged.2[0], 2.0);
+    }
+
+    #[test]
     fn merge_keeps_empty_rows() {
         let merged = merge_repeats(&[0, 0, 2, 2], &[3, 3, 1], &[1.0, 2.0, 5.0], 4);
         assert_eq!(merged, Some((vec![0, 0, 1, 1], vec![3, 1], vec![3.0, 5.0])));
@@ -419,9 +480,12 @@ mod tests {
                 .wrapping_add(1442695040888963407);
             (state >> 33) % bound
         };
-        for _ in 0..2000 {
-            let (rows, width, nnz) = (next(6) as usize, 1 + next(5) as usize, next(16) as usize);
-            let cind: Vec<c_int> = (0..nnz).map(|_| next(width as u64) as c_int).collect();
+        for i in 0..4000 {
+            // Wide models with few terms take the scan path, narrow ones the table.
+            let width = 1 + next(5) as usize + if i % 2 == 0 { 0 } else { 1000 };
+            let (rows, nnz) = (next(6) as usize, next(16) as usize);
+            let span = width.min(5) as u64; // keep repeats likely in wide models too
+            let cind: Vec<c_int> = (0..nnz).map(|_| next(span) as c_int).collect();
             let cval: Vec<f64> = (0..nnz).map(|_| next(9) as f64 - 4.0).collect();
             let mut cbeg: Vec<usize> = (0..rows).map(|_| next(nnz as u64 + 1) as usize).collect();
             cbeg.sort_unstable();
