@@ -23,6 +23,45 @@ _INDEX_TYPES = (pl.Int32, pl.UInt32)
 _INFINITY = gp.GRB.INFINITY  # gurobipy reports values >= Gurobi's infinity as Python infinities.
 
 
+def add_var(
+    model: gp.Model,
+    *,
+    lb: float = 0.0,
+    ub: float = float("inf"),
+    obj: float = 0.0,
+    vtype: VType = "C",
+    name: str | None = None,
+    idx: str = "idx",
+) -> pl.DataFrame:
+    """
+    Add a single variable, returning a one-row frame with its column index `idx`.
+    Does not call `model.update()`, unless the model has pending deletions.
+
+    :param model: The Gurobi model to add the variable to.
+    :param lb: Lower bound for the variable.
+    :param ub: Upper bound for the variable.
+    :param obj: Objective coefficient for the variable.
+    :param vtype: Variable type to create: `C` (continuous), `B` (binary),
+        `I` (integer), `S` (semi-continuous) or `N` (semi-integer).
+    :param name: Name for the variable.
+    :param idx: Column name for the variable index.
+    :return: One-row DataFrame with the variable's index.
+    """
+    _sync(model)
+    start = len(model._internal_vars)
+    _native.add_vars(
+        model._cmodel,
+        1,
+        obj=pl.Series([float(obj)], dtype=pl.Float64),
+        lb=pl.Series([float(lb)], dtype=pl.Float64),
+        ub=pl.Series([float(ub)], dtype=pl.Float64),
+        vtype=pl.Series([ord(vtype)], dtype=pl.UInt8),
+        names=None if name is None else pl.Series([name], dtype=pl.String),
+    )
+    _handles.register(model, "var", start, 1)
+    return pl.DataFrame({idx: pl.Series([start], dtype=pl.UInt32)})
+
+
 def add_vars(
     model: gp.Model,
     keys: pl.DataFrame,

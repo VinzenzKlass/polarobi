@@ -44,16 +44,18 @@ Everything gurobipy offers works on elements polarobi added, and polarobi works 
 - `getVars()`, `getConstrs()`, `getVarByName()`, `getConstrByName()` and `getRow()` see all elements.
 - Expressions mix variables from both sides, before or after `update()`.
 - `remove()`, `copy()`, `write()` and `optimize()` behave as usual.
-- Terms frames may refer to variables gurobipy added, by their index:
+- Terms frames may refer to variables gurobipy added, by their index (for a single variable without an `update()`,
+  use [`add_var`](variables.md#single-variables)):
 
 ```python
-air = model.addVar(ub=budget, name="air_expansion")
-model.update()
+from polarobi import add_var
+
+air = add_var(model, ub=budget, name="air_expansion")
 
 terms = pl.concat(
     [
         x.filter(pl.col("mode") == "AIR").select("idx", coef=pl.col("quantity")),
-        pl.DataFrame({"idx": [air.index], "coef": [-1.0]}),
+        air.with_columns(coef=pl.lit(-1.0)),
     ],
     how="vertical_relaxed",
 )
@@ -62,15 +64,16 @@ grb(terms).add_constrs(model, by=[], sense="<=", rhs=max_air, coef="coef", name=
 
 !!! note "Pending elements"
     gurobipy updates models lazily: new elements have no index-based attributes until `update()` or `optimize()`.
-    polarobi follows the same rules. It can add constraints over variables that await an update, but reading their
-    attributes needs an update first, exactly as with gurobipy.
+    polarobi follows the same rules. It does not call `model.update()` unless the model has pending deletions from
+    `model.remove(...)`, so it can add constraints over variables that await an update, while reading their attributes
+    needs an update first, exactly as with gurobipy.
 
 
 ## Removing Elements
 
 Removing variables or constraints works through gurobipy, with `model.remove(...)`. As with gurobipy's `Var.index`,
-the indices of later elements shift down once the removal is applied. polarobi applies pending removals itself
-before it adds or looks up elements, so its own calls always see current indices; `idx` columns in frames from
+the indices of later elements shift down once the removal is applied. Whenever the model has pending deletions, the
+next polarobi call runs `model.update()` first so its own calls see current indices; `idx` columns in frames from
 before the removal, however, are not updated. See [Indices After Removals](attributes.md#indices-after-removals).
 
 

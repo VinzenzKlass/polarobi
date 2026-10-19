@@ -17,7 +17,7 @@ from hypothesis import strategies as st
 
 from tests.harness import native, reference
 from tests.harness.compare import assert_identical
-from tests.harness.specs import AddConstrs, AddVars, GetAttr
+from tests.harness.specs import AddConstrs, AddVar, AddVars, GetAttr
 from tests.harness.strategies import key_frames
 
 _ENV = gp.Env(params={"OutputFlag": 0, "Threads": 1})
@@ -137,3 +137,17 @@ def test_failed_family_with_repeats_changes_nothing(models: tuple[gp.Model, gp.M
     with pytest.raises(gp.GurobiError):
         native.add_constrs(polarobi_model, AddConstrs(terms, ("g",), "<"))
     assert_identical(polarobi_model, untouched)
+
+
+@pytest.mark.parametrize(
+    "kwargs", [{"lb": float("nan")}, {"ub": float("nan")}, {"obj": float("nan")}, {"vtype": "X"}]
+)
+def test_invalid_add_var_changes_nothing(
+    models: tuple[gp.Model, gp.Model], kwargs: dict[str, object]
+) -> None:
+    _both_raise(
+        gp.GurobiError,
+        models,
+        lambda m: native.add_var(m, AddVar(**kwargs)),  # pyright: ignore[reportArgumentType]
+        lambda m: reference.add_var(m, AddVar(**kwargs)),  # pyright: ignore[reportArgumentType]
+    )

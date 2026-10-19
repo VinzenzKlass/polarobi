@@ -16,7 +16,7 @@ from typing import Any
 import gurobipy as gp
 import polars as pl
 
-from tests.harness.specs import AddConstrs, AddVars, GetAttr, IntoColumn, Kind, SetAttr
+from tests.harness.specs import AddConstrs, AddVar, AddVars, GetAttr, IntoColumn, Kind, SetAttr
 
 type Key = tuple[Any, ...]
 
@@ -28,6 +28,12 @@ _SENSE = {
     "=": gp.GRB.EQUAL,
     "==": gp.GRB.EQUAL,
 }
+
+
+def add_var(model: gp.Model, spec: AddVar) -> pl.DataFrame:
+    var = model.addVar(lb=spec.lb, ub=spec.ub, obj=spec.obj, vtype=spec.vtype, name=spec.name or "")
+    model.update()
+    return pl.DataFrame([_index(spec.idx, [var])])
 
 
 def add_vars(model: gp.Model, spec: AddVars) -> pl.DataFrame:

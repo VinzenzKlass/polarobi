@@ -96,6 +96,7 @@ depend on a particular name format, pass an expression, such as
 | gurobipy | polarobi |
 |---|---|
 | `model.addVars(df.select(keys).iter_rows(), ...)` | `grb(df).add_vars(model, by=keys, ...)` |
+| `model.addVar(ub=b, obj=c, name="v")` | `add_var(model, ub=b, obj=c, name="v")` |
 | `ub=list(caps.values())` | `ub="cap"`, a column of the same frame |
 | `x[(a, b)]` lookups | A join on `a, b` that brings `idx` along |
 | `gp.LinExpr(coefs, [x[k] for k in keys])` | A terms frame with `idx` and a coefficient column, passed as `coef=` |

@@ -18,7 +18,7 @@ from typing import Any
 import polars as pl
 from hypothesis import strategies as st
 
-from tests.harness.specs import AddConstrs, AddVars, GetAttr, IntoColumn, Kind, SetAttr
+from tests.harness.specs import AddConstrs, AddVar, AddVars, GetAttr, IntoColumn, Kind, SetAttr
 
 _SENSES = ("<", "<=", ">", ">=", "=", "==")
 _VTYPES = (None, "C", "B", "I", "S", "N")
@@ -93,6 +93,18 @@ def _names(keys: list[str]) -> st.SearchStrategy[str | pl.Expr | None]:
     exprs = [pl.concat_str(pl.lit("n"), pl.col(k).cast(pl.String)) for k in keys]
     return (
         st.none() | st.from_regex(r"[a-z]{1,3}", fullmatch=True) | st.sampled_from(exprs or [None])
+    )
+
+
+@st.composite
+def add_var_specs(draw: st.DrawFn) -> AddVar:
+    return AddVar(
+        lb=draw(st.sampled_from([float("-inf"), 0.0, -0.0, -5.0, 1.0])),
+        ub=draw(st.sampled_from([float("inf"), 1.0, 10.0, 1e6])),
+        obj=draw(_FINITE),
+        vtype=draw(st.sampled_from(["C", "B", "I", "S", "N"])),
+        name=draw(st.none() | st.from_regex(r"[a-z]{1,6}", fullmatch=True)),
+        idx=draw(st.sampled_from(["idx", "col"])),
     )
 
 

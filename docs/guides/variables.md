@@ -110,6 +110,21 @@ Pass `by=[]` to add variables without keys. They are then never duplicates, and 
 variable's plain name.
 
 
+## Single Variables
+
+`add_var` adds a single variable and returns a one-row frame with its `idx` column, so it works with
+[constraints](constraints.md), [`get` and `set`](attributes.md), and [`handles`](gurobipy.md#handles) without calling
+`model.update()` (unless the model has [pending removals](gurobipy.md#removing-elements)):
+
+```python
+from polarobi import add_var
+
+air = add_var(model, lb=0.0, ub=250.0, obj=-10.0, vtype="C", name="air_expansion")
+```
+
+`name` is used as is, without brackets, and `None` leaves the variable unnamed.
+
+
 ## Large Frames
 
 `add_vars` passes numeric columns to Gurobi without copying them and makes a single call into Gurobi for the whole

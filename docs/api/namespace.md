@@ -11,7 +11,9 @@ same namespace in a form type checkers understand; see [Type Checking](../instal
 take the gurobipy model to work on as their first argument.
 
 Variables and constraints are identified by an `idx` column holding their Gurobi column or row index at creation.
-Like `Var.index`, these shift when elements before them are removed.
+Like `Var.index`, these shift when elements before them are removed. If the model has pending deletions from
+`model.remove(...)`, polarobi calls `model.update()` first so its indices stay aligned with Gurobi's; otherwise it
+leaves the model lazy.
 
 ::: polarobi._api
     options:
@@ -19,6 +21,7 @@ Like `Var.index`, these shift when elements before them are removed.
             - IntoColumn
             - Sense
             - VType
+            - add_var
         show_root_heading: false
         show_root_toc_entry: false
 
