@@ -13,6 +13,7 @@ nav = [
     { "Getting Started" = [
         { "Installation" = "installation.md" },
         { "Quick Start" = "quickstart.md" },
+        { "Agent Skill" = "agents.md" },
     ] },
     { "Guides" = [
         { "Index" = "guides/index.md" },
