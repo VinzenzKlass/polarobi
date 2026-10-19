@@ -7,9 +7,11 @@ Where gurobipy raises, polarobi raises the same exception type. A failing call n
 model: polarobi validates before the single Gurobi call and only registers handles after it.
 """
 
+import datetime
 from collections.abc import Callable, Iterator
 
 import gurobipy as gp
+import polarobi
 import polars as pl
 import pytest
 from hypothesis import given
@@ -151,3 +153,32 @@ def test_invalid_add_var_changes_nothing(
         lambda m: native.add_var(m, AddVar(**kwargs)),  # pyright: ignore[reportArgumentType]
         lambda m: reference.add_var(m, AddVar(**kwargs)),  # pyright: ignore[reportArgumentType]
     )
+
+
+@pytest.mark.parametrize(
+    ("sources", "match"),
+    [
+        ([123], "source 0"),
+        ([pl.DataFrame({"k": [1], "idx": [0]}), ("not_a_df", 1.0)], "source 1"),
+        ([(pl.DataFrame({"k": [1], "idx": [0]}),)], "source 0"),
+        ([(pl.DataFrame({"k": [1], "idx": [0]}), 1.0, 99)], "source 0"),
+        ([(pl.DataFrame({"k": [1], "idx": [0]}), 1.0, "idx", "extra")], "source 0"),
+    ],
+)
+def test_malformed_sources_raise_type_error(
+    models: tuple[gp.Model, gp.Model], sources: list[object], match: str
+) -> None:
+    polarobi_model, untouched = models
+    with pytest.raises(TypeError, match=match):
+        polarobi.add_constrs(polarobi_model, sources, by="k", sense="<=")  # pyright: ignore[reportArgumentType]
+    assert_identical(polarobi_model, untouched)
+
+
+def test_incompatible_key_dtypes_raise_type_error(models: tuple[gp.Model, gp.Model]) -> None:
+    polarobi_model, untouched = models
+    s0 = pl.DataFrame({"k": [True], "idx": [0]})
+    s1 = pl.DataFrame({"k": [False], "idx": [1]})
+    s2 = pl.DataFrame({"k": [datetime.date(2026, 1, 1)], "idx": [2]})
+    with pytest.raises(TypeError, match="source 2.*'k'"):
+        polarobi.add_constrs(polarobi_model, [s0, s1, s2], by="k", sense="<=")
+    assert_identical(polarobi_model, untouched)

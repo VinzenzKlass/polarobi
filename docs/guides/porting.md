@@ -61,16 +61,15 @@ penalty, and a maximum quantity. Vendor weeks without any demand get no constrai
 
 === "polarobi"
     ```python
+    from polarobi import add_constrs
+
     keys = ("vendor_code", "ex_go_date")
     x = grb(demand).add_vars(model, by=["order", *keys], vtype="B", name="x")
     breach = grb(capacity).add_vars(model, by=keys, name="breach")
 
-    quantity = x.select(*keys, "idx", coef=pl.col("quantity"))
-    rows = capacity.join(quantity.select(keys), on=keys, how="semi")
-    comb = pl.concat((quantity, breach.select(*keys, "idx", coef=1.0)), how="vertical_relaxed")
-
-    grb(comb).add_constrs(model, rows, by=keys, sense=">=", rhs="min_qty", coef="coef")
-    grb(quantity).add_constrs(model, rows, by=keys, sense="<=", rhs="max_qty", coef="coef")
+    rows = capacity.join(x.select(keys), on=keys, how="semi")
+    add_constrs(model, [(x, "quantity"), breach], rows, by=keys, sense=">=", rhs="min_qty")
+    grb(x).add_constrs(model, rows, by=keys, sense="<=", rhs="max_qty", coef="quantity")
     ```
 
 What changed:
@@ -79,8 +78,8 @@ What changed:
   `addVars` formats its keys.
 - **Lookups** like `x[o, v, w]` disappear. `x` already carries each variable's `idx` next to its keys, so selecting
   columns is enough. Where variables and data live in different frames, a join on the keys does the lookup.
-- **Expressions** become terms frames. Adding the breach variable to the quantity expression is a `concat` of the
-  two term frames.
+- **Expressions** become terms frames. Adding the breach variable to the quantity expression is a second source in
+  the list passed to `add_constrs`.
 - **Skipping groups** with `continue` becomes filtering the rows frame. The maximum constraint does not even need
   that: rows without terms are dropped by default. The minimum constraint does, because the breach term would
   otherwise make every vendor week non-empty.
@@ -101,7 +100,7 @@ depend on a particular name format, pass an expression, such as
 | `x[(a, b)]` lookups | A join on `a, b` that brings `idx` along |
 | `gp.LinExpr(coefs, [x[k] for k in keys])` | A terms frame with `idx` and a coefficient column, passed as `coef=` |
 | `quicksum(x[k] for k in keys)` | A terms frame with `idx`; `coef` defaults to 1 |
-| `quicksum(e1 + e2)` across families | `pl.concat([terms1, terms2], how="vertical_relaxed")` |
+| `quicksum(e1 + e2)` across families | `add_constrs(model, [(df1, c1), (df2, c2)], ...)` |
 | `expr <= big_m * y` | `y`'s terms with `coef=-big_m`, `rhs=0` |
 | `if not exprs: continue` | Default `drop_empty=True`, or a filtered rows frame |
 | `for row in df.iter_rows(): model.addLConstr(...)` | `grb(terms).add_constrs(model, df, by=keys, ...)` |

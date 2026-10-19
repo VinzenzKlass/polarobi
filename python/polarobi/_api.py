@@ -7,7 +7,9 @@ import polars as pl
 from polarobi import _handles, _native
 
 type IntoColumn = pl.Series | pl.Expr | str | float | int
+type Coef = IntoColumn
 type Sense = Literal["<", "<=", ">", ">=", "=", "=="]
+type Source = pl.DataFrame | tuple[pl.DataFrame, Coef] | tuple[pl.DataFrame, Coef, str]
 type VType = Literal["C", "B", "I", "S", "N"]
 
 _SENSE = {
@@ -95,7 +97,7 @@ def add_vars(
 
 def add_constrs(
     model: gp.Model,
-    terms: pl.DataFrame,
+    terms: pl.DataFrame | Sequence[Source],
     rows: pl.DataFrame | None = None,
     *,
     by: str | Sequence[str],
@@ -107,7 +109,30 @@ def add_constrs(
     drop_empty: bool = True,
     idx: str = "idx",
 ) -> pl.DataFrame:
+    """
+    Add one linear constraint per group of terms across `terms`, `sum(coef * x[var]) <sense> rhs`.
+
+    Each item in `terms` is `frame`, `(frame, coef)` or `(frame, coef, var)`.
+
+    :param model: The Gurobi model to add constraints to.
+    :param terms: Sequence of term sources (`frame`, `(frame, coef)` or `(frame, coef, var)`).
+    :param rows: DataFrame with one row per constraint containing the keys `by`. Defaults to
+        distinct keys of the terms in order of appearance.
+    :param by: Columns to use as keys for grouping terms into constraints.
+    :param sense: Constraint sense: `<` or `<=` (less than or equal), `>` or `>=`
+        (greater than or equal), or `=` or `==` (equal).
+    :param rhs: Right-hand side for constraints.
+    :param name: Name for constraints.
+    :param var: Column name for variable indices when `terms` is a single DataFrame.
+    :param coef: Coefficient for each term when `terms` is a single DataFrame.
+    :param drop_empty: Whether to drop rows in `rows` that have no matching terms.
+    :param idx: Column name for constraint indices.
+    :return: DataFrame with added constraints.
+    """
     by = [by] if isinstance(by, str) else list(by)
+    if not isinstance(terms, pl.DataFrame):
+        # Each source is `frame`, `(frame, coef)` or `(frame, coef, var)`: one terms frame.
+        terms, var, coef = _concat_sources(terms, by), _ROW + "var", _ROW + "coef"
     if not by:
         return _add_constr_over_all(model, terms, rows, sense, rhs, name, var, coef, idx)
     _sync(model)
@@ -185,6 +210,46 @@ def _add_constr_over_all(
         model, terms, by=key, sense=sense, rhs=rhs, name=name, var=var, coef=coef, idx=idx
     )
     return added.drop(key)
+
+
+def _concat_sources(sources: Sequence[Source], by: Sequence[str]) -> pl.DataFrame:
+    var, coef = _ROW + "var", _ROW + "coef"
+    terms: pl.DataFrame | None = None
+    for i, source in enumerate(sources):
+        df, c, v = _unpack_source(source, i)
+        frame = df.select(*by, pl.col(v).alias(var), _expr(c).cast(pl.Float64).alias(coef))
+        if terms is None:
+            terms = frame
+            continue
+        try:
+            terms = pl.concat([terms, frame], how="vertical_relaxed")
+        except (pl.exceptions.SchemaError, pl.exceptions.InvalidOperationError) as err:
+            col = next(k for k in by if terms.schema[k] != frame.schema[k])
+            raise TypeError(
+                f"source {i} has incompatible dtype {frame.schema[col]} for key column {col!r}"
+            ) from err
+    if terms is None:
+        raise ValueError("terms must contain at least one source")
+    return terms
+
+
+def _unpack_source(source: object, i: int) -> tuple[pl.DataFrame, Coef, str]:
+    """`(frame, coef, var)` of a source, checked at runtime as callers may pass anything."""
+    match source:
+        case pl.DataFrame() as df:
+            return df, 1.0, "idx"
+        case (pl.DataFrame() as df, pl.Series() | pl.Expr() | str() | float() | int() as c):
+            return df, c, "idx"
+        case (
+            pl.DataFrame() as df,
+            pl.Series() | pl.Expr() | str() | float() | int() as c,
+            str() as v,
+        ):
+            return df, c, v
+        case _:
+            raise TypeError(
+                f"source {i} must be a DataFrame, (DataFrame, coef) or (DataFrame, coef, var)"
+            )
 
 
 def get_attr(

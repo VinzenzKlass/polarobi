@@ -164,13 +164,9 @@ def test_add_var(model: gp.Model) -> None:
     assert air.item(0, "col") == 2
     assert model.NumVars == 0  # no update() performed
 
-    terms = pl.concat(
-        [
-            unnamed.select("idx", coef=pl.lit(1.0)),
-            air.select(pl.col("col").alias("idx"), coef=pl.lit(-1.0)),
-        ]
+    constr = polarobi.add_constrs(
+        model, [unnamed, (air, -1.0, "col")], by=[], sense=">=", rhs=0.0, name="link"
     )
-    constr = terms.grb.add_constrs(model, by=[], sense=">=", rhs=0.0, coef="coef", name="link")
     air.grb.set(model, "UB", 300.0, idx="col")
 
     model.ModelSense = gp.GRB.MINIMIZE
@@ -183,3 +179,87 @@ def test_add_var(model: gp.Model) -> None:
     assert unnamed.grb.get(model, "X").item(0, "X") == pytest.approx(300.0)
     assert air.grb.get(model, "X", idx="col").item(0, "X") == pytest.approx(300.0)
     assert constr.grb.get(model, "Slack").item(0, "Slack") == pytest.approx(0.0)
+
+
+def test_multi_source_add_constrs() -> None:
+    keys = ("v", "w")
+    x_dist = pl.DataFrame(
+        {"v": ["A", "B"], "w": [1, 2], "quantity": [3.0, 4.0], "extra": ["x", "y"]},
+        schema={"v": pl.String, "w": pl.Int32, "quantity": pl.Float64, "extra": pl.String},
+    )
+    x_nd = pl.DataFrame(
+        {"v": ["A", "C"], "w": [1, 1], "quantity": [2, 5], "other": [10, 20]},
+        schema={"v": pl.String, "w": pl.Int64, "quantity": pl.Int64, "other": pl.Int64},
+    )
+    breach = pl.DataFrame(
+        {"v": ["A", "B", "C"], "w": [1, 2, 1], "noise": [True, False, True]},
+        schema={"v": pl.String, "w": pl.Int32, "noise": pl.Boolean},
+    )
+    penalty = pl.DataFrame(
+        {"v": ["B", "C"], "w": [2, 1], "moq": [1.5, 2.5]},
+        schema={"v": pl.String, "w": pl.Int64, "moq": pl.Float64},
+    )
+    rows = pl.DataFrame(
+        {"v": ["A", "B", "C"], "w": [1, 2, 1], "min_quantity": [4.0, 3.0, 2.0]},
+        schema={"v": pl.String, "w": pl.Int64, "min_quantity": pl.Float64},
+    )
+
+    with (
+        gp.Env(params={"OutputFlag": 0}) as env,
+        gp.Model(env=env) as ref,
+        gp.Model(env=env) as new,
+    ):
+        d_ref = polarobi.GurobiFrame(x_dist).add_vars(ref, by=keys, name="d")
+        nd_ref = polarobi.GurobiFrame(x_nd).add_vars(ref, by=keys, name="nd")
+        b_ref = polarobi.GurobiFrame(breach).add_vars(ref, by=keys, name="b")
+        p_ref = polarobi.GurobiFrame(penalty).add_vars(ref, by=keys, name="p", idx="p_idx")
+
+        d_new = polarobi.GurobiFrame(x_dist).add_vars(new, by=keys, name="d")
+        nd_new = polarobi.GurobiFrame(x_nd).add_vars(new, by=keys, name="nd")
+        b_new = polarobi.GurobiFrame(breach).add_vars(new, by=keys, name="b")
+        p_new = polarobi.GurobiFrame(penalty).add_vars(new, by=keys, name="p", idx="p_idx")
+
+        # Repeated variable within and across sources: d_new appears again with a Series coef.
+        series_coef = pl.Series([0.5, 1.5])
+        terms = pl.concat(
+            [
+                d_ref.select(*keys, "idx", coef=pl.col("quantity").cast(pl.Float64)),
+                nd_ref.select(*keys, "idx", coef=pl.col("quantity").cast(pl.Float64)),
+                b_ref.select(*keys, "idx", coef=pl.lit(1.0)),
+                p_ref.select(
+                    *keys, pl.col("p_idx").alias("idx"), coef=-pl.col("moq").cast(pl.Float64)
+                ),
+                d_ref.select(*keys, "idx", coef=series_coef),
+            ],
+            how="vertical_relaxed",
+        )
+        got_ref = polarobi.GurobiFrame(terms).add_constrs(
+            ref, rows, by=keys, sense=">=", rhs="min_quantity", coef="coef", name="cap", idx="c_idx"
+        )
+        got_new = polarobi.add_constrs(
+            new,
+            [
+                (d_new, "quantity"),
+                (nd_new, "quantity"),
+                b_new,
+                (p_new, -pl.col("moq"), "p_idx"),
+                (d_new, series_coef),
+            ],
+            rows,
+            by=keys,
+            sense=">=",
+            rhs="min_quantity",
+            name="cap",
+            idx="c_idx",
+        )
+        ref.update()
+        new.update()
+        assert got_new.equals(got_ref)
+        assert got_new.schema["w"] == pl.Int64
+        assert new.Fingerprint == ref.Fingerprint
+
+        # Without explicit rows, key dtypes unify to Int64 across sources.
+        no_rows = polarobi.add_constrs(
+            new, [(d_new, "quantity"), (nd_new, "quantity")], by=keys, sense=">="
+        )
+        assert no_rows.schema["w"] == pl.Int64

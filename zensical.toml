@@ -29,6 +29,7 @@ nav = [
     ] },
     { "Benchmarks" = "benchmarks.md" },
     { "API Reference" = [
+        { "polarobi" = "api/polarobi.md" },
         { "DataFrame.grb" = "api/namespace.md" },
     ] },
 ]
