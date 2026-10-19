@@ -5,10 +5,19 @@ https://vinzenzklass.github.io/polarobi/
 """
 
 from polarobi import _library
-from polarobi._api import IntoColumn, Sense, VType, add_var
+from polarobi._api import Coef, IntoColumn, Sense, Source, VType, add_constrs, add_var
 
 _library.bind()
 
 from polarobi._namespace import GurobiFrame  # noqa: E402 - importing registers `df.grb`
 
-__all__ = ["GurobiFrame", "IntoColumn", "Sense", "VType", "add_var"]
+__all__ = [
+    "Coef",
+    "GurobiFrame",
+    "IntoColumn",
+    "Sense",
+    "Source",
+    "VType",
+    "add_constrs",
+    "add_var",
+]

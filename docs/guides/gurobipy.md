@@ -48,18 +48,17 @@ Everything gurobipy offers works on elements polarobi added, and polarobi works 
   use [`add_var`](variables.md#single-variables)):
 
 ```python
-from polarobi import add_var
+from polarobi import add_constrs, add_var
 
 air = add_var(model, ub=budget, name="air_expansion")
-
-terms = pl.concat(
-    [
-        x.filter(pl.col("mode") == "AIR").select("idx", coef=pl.col("quantity")),
-        air.with_columns(coef=pl.lit(-1.0)),
-    ],
-    how="vertical_relaxed",
+add_constrs(
+    model,
+    [(x.filter(pl.col("mode") == "AIR"), "quantity"), (air, -1.0)],
+    by=[],
+    sense="<=",
+    rhs=max_air,
+    name="air_limit",
 )
-grb(terms).add_constrs(model, by=[], sense="<=", rhs=max_air, coef="coef", name="air_limit")
 ```
 
 !!! note "Pending elements"

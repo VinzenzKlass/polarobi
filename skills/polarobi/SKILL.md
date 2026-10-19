@@ -101,24 +101,25 @@ grb(terms).add_constrs(
     model, tool_cap, by=["tooling", "week"], sense="<=", rhs="capacity", coef="coef"
 )
 
-# Expression spanning several families: concat terms
-terms = pl.concat(
-    [
-        x_a.select("factory", "idx", coef=pl.col("qty")),
-        x_b.select("factory", "idx", coef=pl.col("qty")),
-    ],
-    how="vertical_relaxed",
+# Expression spanning several families: module-level add_constrs takes a list of sources
+# Each source is frame, (frame, coef), or (frame, coef, var)
+polarobi.add_constrs(
+    model,
+    [(x_a, "qty"), (x_b, "qty")],
+    by="factory",
+    sense="<=",
+    rhs=100.0,
 )
 
 # Variable on the right-hand side moves left with a negated coef: sum(q*x) >= moq*y  ->  sum(q*x) - moq*y >= 0
-terms = pl.concat(
-    [
-        x.select("group", "idx", coef=pl.col("quantity")),
-        y.select("group", "idx", coef=-pl.col("moq")),
-    ],
-    how="vertical_relaxed",
+polarobi.add_constrs(
+    model,
+    [(x, "quantity"), (y, -pl.col("moq"))],
+    by="group",
+    sense=">=",
+    rhs=0.0,
+    name="moq",
 )
-grb(terms).add_constrs(model, by="group", sense=">=", rhs=0.0, coef="coef", name="moq")
 
 # Big-M linking x <= M*y per site: same pattern, y with coef=-M
 ```

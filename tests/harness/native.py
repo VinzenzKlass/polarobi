@@ -10,7 +10,7 @@ import gurobipy as gp
 import polarobi as polarobi  # registers df.grb
 import polars as pl
 
-from tests.harness.specs import AddConstrs, AddVar, AddVars, GetAttr, Kind, SetAttr
+from tests.harness.specs import AddConstrs, AddVar, AddVars, GetAttr, Kind, SetAttr, TermSource
 
 
 def add_var(model: gp.Model, spec: AddVar) -> pl.DataFrame:
@@ -34,6 +34,18 @@ def add_vars(model: gp.Model, spec: AddVars) -> pl.DataFrame:
 
 
 def add_constrs(model: gp.Model, spec: AddConstrs) -> pl.DataFrame:
+    if isinstance(spec.terms, tuple):
+        return polarobi.add_constrs(
+            model,
+            [_source(s) for s in spec.terms],
+            spec.rows,
+            by=spec.by,
+            sense=spec.sense,
+            rhs=spec.rhs,
+            name=spec.name,
+            drop_empty=spec.drop_empty,
+            idx=spec.idx,
+        )
     result: pl.DataFrame = spec.terms.grb.add_constrs(
         model,
         spec.rows,
@@ -47,6 +59,14 @@ def add_constrs(model: gp.Model, spec: AddConstrs) -> pl.DataFrame:
         idx=spec.idx,
     )
     return result
+
+
+def _source(spec: TermSource) -> polarobi.Source:
+    if spec.var is not None:
+        return (spec.terms, 1.0 if spec.coef is None else spec.coef, spec.var)
+    if spec.coef is not None:
+        return (spec.terms, spec.coef)
+    return spec.terms
 
 
 def set_attr(model: gp.Model, spec: SetAttr) -> None:

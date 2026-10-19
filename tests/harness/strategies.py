@@ -18,7 +18,16 @@ from typing import Any
 import polars as pl
 from hypothesis import strategies as st
 
-from tests.harness.specs import AddConstrs, AddVar, AddVars, GetAttr, IntoColumn, Kind, SetAttr
+from tests.harness.specs import (
+    AddConstrs,
+    AddVar,
+    AddVars,
+    GetAttr,
+    IntoColumn,
+    Kind,
+    SetAttr,
+    TermSource,
+)
 
 _SENSES = ("<", "<=", ">", ">=", "=", "==")
 _VTYPES = (None, "C", "B", "I", "S", "N")
@@ -133,29 +142,76 @@ def add_vars_specs(draw: st.DrawFn) -> AddVars:
 
 
 @st.composite
+def _term_sources(draw: st.DrawFn, by: tuple[str, ...], num_vars: int) -> tuple[TermSource, ...]:
+    group = st.sampled_from(["a", "b", "c", "d"])
+    int_group = st.sampled_from([1, 2, 3, 4])
+    base_dtypes = [draw(st.sampled_from([pl.String, pl.Int64])) for _ in by]
+    key_strats = [group if d == pl.String else int_group for d in base_dtypes]
+    term_values = st.tuples(*key_strats, st.integers(0, num_vars - 1), _FINITE)
+    n_sources = draw(st.integers(0, 3))
+    sources: list[TermSource] = []
+    for _ in range(n_sources):
+        rows_ = draw(st.lists(term_values, max_size=10))
+        form = draw(st.sampled_from(["frame", "coef", "coef_var"]))
+        var = "idx" if form != "coef_var" else draw(st.sampled_from(["idx", "v"]))
+        source_dtypes = [
+            draw(st.sampled_from([pl.Int32, pl.Int64])) if d == pl.Int64 else d for d in base_dtypes
+        ]
+        df = pl.DataFrame(
+            rows_,
+            schema={**dict(zip(by, source_dtypes, strict=True)), var: pl.Int64, "coef": pl.Float64},
+            orient="row",
+        ).with_columns(pl.col(var).cast(draw(st.sampled_from(_INDEX_DTYPES))), extra=pl.lit(1))
+        coef: IntoColumn | None = None
+        if form != "frame":
+            df, coef_ = draw(into_columns(df, "c_", _FINITE))
+            coef = 1.0 if coef_ is None else coef_
+        sources.append(TermSource(draw(layouts(df)), coef, var if form == "coef_var" else None))
+    return tuple(sources)
+
+
+@st.composite
 def add_constrs_specs(draw: st.DrawFn, num_vars: int) -> AddConstrs:
     by = tuple(f"g{i}" for i in range(draw(st.integers(0, 2))))
     group = st.sampled_from(["a", "b", "c", "d"])
-    term_values = st.tuples(*(group for _ in by), st.integers(0, num_vars - 1), _FINITE)
-    rows_ = draw(st.lists(term_values, max_size=20))
-    var = draw(st.sampled_from(["idx", "v"]))
-    terms = pl.DataFrame(
-        rows_,
-        schema={**dict.fromkeys(by, pl.String), var: pl.Int64, "coef": pl.Float64},
-        orient="row",
-    )
-    terms = terms.with_columns(pl.col(var).cast(draw(st.sampled_from(_INDEX_DTYPES))))
-    coef: IntoColumn = draw(
-        st.sampled_from(["coef", 1.0, -2.5]) | st.just(pl.col("coef") * 3) | st.just(pl.lit(0.5))
-    )
+    int_group = st.sampled_from([1, 2, 3, 4])
+    var = "idx"
+    coef: IntoColumn = 1.0
+    row_schema = dict.fromkeys(by, pl.String)
+    row_key_strats = [group for _ in by]
+    if draw(st.booleans()):
+        sources = draw(_term_sources(by, num_vars))
+        terms: pl.DataFrame | tuple[TermSource, ...] = sources
+        if sources and by:
+            unified = pl.concat(
+                [s.terms.select(by) for s in sources], how="vertical_relaxed"
+            ).schema
+            row_schema = {k: unified[k] for k in by}
+            row_key_strats = [group if row_schema[k] == pl.String else int_group for k in by]
+    else:
+        term_values = st.tuples(*(group for _ in by), st.integers(0, num_vars - 1), _FINITE)
+        rows_ = draw(st.lists(term_values, max_size=20))
+        var = draw(st.sampled_from(["idx", "v"]))
+        df = pl.DataFrame(
+            rows_,
+            schema={**dict.fromkeys(by, pl.String), var: pl.Int64, "coef": pl.Float64},
+            orient="row",
+        )
+        df = df.with_columns(pl.col(var).cast(draw(st.sampled_from(_INDEX_DTYPES))))
+        coef = draw(
+            st.sampled_from(["coef", 1.0, -2.5])
+            | st.just(pl.col("coef") * 3)
+            | st.just(pl.lit(0.5))
+        )
+        terms = draw(layouts(df))
 
     rows: pl.DataFrame | None = None
     sense: Any = draw(st.sampled_from(_SENSES))
     rhs: IntoColumn = draw(_FINITE)
     if by and draw(st.booleans()):  # explicit rows need key columns
         # Keys may repeat: gurobipy adds a constraint per row, with the same name.
-        keys = draw(st.lists(st.tuples(*(group for _ in by)), max_size=8))
-        rows = pl.DataFrame(keys, schema=dict.fromkeys(by, pl.String), orient="row")
+        keys = draw(st.lists(st.tuples(*row_key_strats), max_size=8))
+        rows = pl.DataFrame(keys, schema=row_schema, orient="row")
         rows, rhs_ = draw(into_columns(rows, "r", _FINITE))
         rhs = 0.0 if rhs_ is None else rhs_
         senses = pl.Series(
@@ -170,7 +226,7 @@ def add_constrs_specs(draw: st.DrawFn, num_vars: int) -> AddConstrs:
         rhs = pl.lit(draw(_FINITE))
 
     return AddConstrs(
-        terms=draw(layouts(terms)),
+        terms=terms,
         by=by,
         sense=sense,
         rows=rows,

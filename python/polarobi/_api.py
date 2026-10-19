@@ -7,7 +7,9 @@ import polars as pl
 from polarobi import _handles, _native
 
 type IntoColumn = pl.Series | pl.Expr | str | float | int
+type Coef = IntoColumn
 type Sense = Literal["<", "<=", ">", ">=", "=", "=="]
+type Source = pl.DataFrame | tuple[pl.DataFrame, Coef] | tuple[pl.DataFrame, Coef, str]
 type VType = Literal["C", "B", "I", "S", "N"]
 
 _SENSE = {
@@ -95,7 +97,7 @@ def add_vars(
 
 def add_constrs(
     model: gp.Model,
-    terms: pl.DataFrame,
+    terms: pl.DataFrame | Sequence[Source],
     rows: pl.DataFrame | None = None,
     *,
     by: str | Sequence[str],
@@ -107,15 +109,32 @@ def add_constrs(
     drop_empty: bool = True,
     idx: str = "idx",
 ) -> pl.DataFrame:
+    """
+    Add one linear constraint per group of terms across `terms`, `sum(coef * x[var]) <sense> rhs`.
+
+    Each item in `terms` is `frame`, `(frame, coef)` or `(frame, coef, var)`.
+
+    :param model: The Gurobi model to add constraints to.
+    :param terms: Sequence of term sources (`frame`, `(frame, coef)` or `(frame, coef, var)`).
+    :param rows: DataFrame with one row per constraint containing the keys `by`. Defaults to
+        distinct keys of the terms in order of appearance.
+    :param by: Columns to use as keys for grouping terms into constraints.
+    :param sense: Constraint sense: `<` or `<=` (less than or equal), `>` or `>=`
+        (greater than or equal), or `=` or `==` (equal).
+    :param rhs: Right-hand side for constraints.
+    :param name: Name for constraints.
+    :param var: Column name for variable indices when `terms` is a single DataFrame.
+    :param coef: Coefficient for each term when `terms` is a single DataFrame.
+    :param drop_empty: Whether to drop rows in `rows` that have no matching terms.
+    :param idx: Column name for constraint indices.
+    :return: DataFrame with added constraints.
+    """
     by = [by] if isinstance(by, str) else list(by)
     if not by:
         return _add_constr_over_all(model, terms, rows, sense, rhs, name, var, coef, idx)
     _sync(model)
     vars_, coefs = _ROW + "vars", _ROW + "coefs"
-    index = pl.col(var)
-    if not isinstance(terms.schema.get(var), _INDEX_TYPES):
-        index = index.cast(pl.Int32)
-    terms = terms.select(*by, index.alias(vars_), _expr(coef).cast(pl.Float64).alias(coefs))
+    terms = _terms(terms, by, coef, var)
     # One list of variables and one of coefficients per key, keys in order of first appearance
     # and terms in their order. The lists are the CSR Gurobi takes: Arrow stores a list column
     # as one flat array of items plus the offset of each row into it.
@@ -139,6 +158,8 @@ def add_constrs(
     if given:
         # Every row gets the lists of its key, so repeated keys get them again. A null key is a
         # key like any other.
+        if grouped.is_empty():
+            grouped = grouped.with_columns(pl.col(k).cast(rows.schema[k]) for k in by)
         rows = rows.join(
             grouped,
             on=by,
@@ -146,8 +167,8 @@ def add_constrs(
             maintain_order="left",
             nulls_equal=True,
         )
-        if not drop_empty:
-            rows = rows.with_columns(pl.col(vars_).fill_null([]), pl.col(coefs).fill_null([]))
+    if not drop_empty:
+        rows = rows.with_columns(pl.col(vars_).fill_null([]), pl.col(coefs).fill_null([]))
     n, start = rows.height, len(model._constrs)
     _native.add_constrs(
         model._cmodel,
@@ -165,7 +186,7 @@ def add_constrs(
 
 def _add_constr_over_all(
     model: gp.Model,
-    terms: pl.DataFrame,
+    terms: pl.DataFrame | Sequence[Source],
     rows: pl.DataFrame | None,
     sense: Sense | pl.Series | pl.Expr,
     rhs: IntoColumn,
@@ -178,13 +199,83 @@ def _add_constr_over_all(
     if rows is not None:
         raise ValueError("rows need key columns: pass `by`")
     key = "__polarobi_all"
-    terms = terms.with_columns(pl.lit(True).alias(key))
+    terms = _terms(terms, (), coef, var).with_columns(pl.lit(True).alias(key))
     # A plain name, not `name[True]`, as gurobipy names a constraint without keys.
     name = pl.lit(name) if isinstance(name, str) else name
     added = add_constrs(
-        model, terms, by=key, sense=sense, rhs=rhs, name=name, var=var, coef=coef, idx=idx
+        model,
+        terms,
+        by=key,
+        sense=sense,
+        rhs=rhs,
+        name=name,
+        var=_ROW + "vars",
+        coef=_ROW + "coefs",
+        idx=idx,
     )
     return added.drop(key)
+
+
+def _terms(
+    terms: pl.DataFrame | Sequence[Source], by: Sequence[str], coef: IntoColumn, var: str
+) -> pl.DataFrame:
+    if isinstance(terms, pl.DataFrame):
+        return _source_terms(terms, coef, var, by)
+    frames = [_source_terms(*_unpack_source(s, i), by, pl.Int32) for i, s in enumerate(terms)]
+    if not frames:
+        vars_, coefs = _ROW + "vars", _ROW + "coefs"
+        return pl.DataFrame(
+            schema={**dict.fromkeys(by, pl.Null), vars_: pl.Int32, coefs: pl.Float64}
+        )
+    if len(frames) == 1:
+        return frames[0]
+    try:
+        return pl.concat(frames, how="vertical_relaxed")
+    except pl.exceptions.SchemaError, pl.exceptions.InvalidOperationError:
+        for col in by:
+            acc = frames[0].select(col)
+            for i in range(1, len(frames)):
+                try:
+                    acc = pl.concat([acc, frames[i].select(col)], how="vertical_relaxed")
+                except (pl.exceptions.SchemaError, pl.exceptions.InvalidOperationError) as err:
+                    raise TypeError(
+                        f"source {i} has incompatible dtype "
+                        f"{frames[i].schema[col]} for key column {col!r}"
+                    ) from err
+        raise
+
+
+def _unpack_source(source: Any, pos: int) -> tuple[pl.DataFrame, IntoColumn, str]:
+    match source:
+        case pl.DataFrame() as df:
+            return df, 1.0, "idx"
+        case (pl.DataFrame() as df, coef):
+            return df, coef, "idx"
+        case (pl.DataFrame() as df, coef, str() as var):
+            return df, coef, var
+        case _:
+            raise TypeError(
+                f"source {pos} must be a DataFrame, (DataFrame, coef) or (DataFrame, coef, var)"
+            )
+
+
+def _source_terms(
+    df: pl.DataFrame,
+    coef: IntoColumn,
+    var: str,
+    by: Sequence[str],
+    index_dtype: type[pl.Int32] | None = None,
+) -> pl.DataFrame:
+    vars_, coefs = _ROW + "vars", _ROW + "coefs"
+    index = pl.col(var)
+    if index_dtype is not None:
+        if df.schema.get(var) != index_dtype:
+            index = index.cast(index_dtype)
+    elif not isinstance(df.schema.get(var), _INDEX_TYPES):
+        index = index.cast(pl.Int32)
+    if isinstance(coef, pl.Series) and coef.len() != df.height:
+        raise ValueError(f"expected {df.height} values, got {coef.len()}")
+    return df.select(*by, index.alias(vars_), _expr(coef).cast(pl.Float64).alias(coefs))
 
 
 def get_attr(
@@ -308,7 +399,7 @@ def _key_text(column: str, dtype: pl.DataType) -> pl.Expr:
     """A key as gurobipy writes it into names: `str()` of the Python value."""
     value = pl.col(column)
     if dtype == pl.Null:
-        return pl.lit("None")
+        return value.cast(pl.String).fill_null("None")
     if dtype == pl.Boolean:
         text = pl.when(value).then(pl.lit("True")).otherwise(pl.lit("False"))
     elif dtype.is_integer() or isinstance(dtype, (pl.String, pl.Date)):

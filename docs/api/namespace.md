@@ -18,10 +18,13 @@ leaves the model lazy.
 ::: polarobi._api
     options:
         members:
+            - Coef
             - IntoColumn
             - Sense
+            - Source
             - VType
             - add_var
+            - add_constrs
         show_root_heading: false
         show_root_toc_entry: false
 

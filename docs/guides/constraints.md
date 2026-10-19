@@ -54,19 +54,20 @@ grb(terms).add_constrs(
 )
 ```
 
-A constraint that spans several variable families is a `concat` of their terms. The capacity of a factory, used by
-both kinds of demand:
+A constraint that spans several variable families takes a list of term sources with the module-level `add_constrs`.
+Each source is `frame` (coefficient 1, index `idx`), `(frame, coef)` or `(frame, coef, var)`. The capacity of a
+factory, used by both kinds of demand:
 
 ```python
-terms = pl.concat(
-    [
-        x_dist.select("factory", "week", "idx", coef=pl.col("quantity")),
-        x_stock.select("factory", "week", "idx", coef=pl.col("quantity")),
-    ],
-    how="vertical_relaxed",
-)
-grb(terms).add_constrs(
-    model, factories, by=["factory", "week"], sense="<=", rhs="max_quantity", coef="coef"
+from polarobi import add_constrs
+
+add_constrs(
+    model,
+    [(x_dist, "quantity"), (x_stock, "quantity")],
+    factories,
+    by=["factory", "week"],
+    sense="<=",
+    rhs="max_quantity",
 )
 ```
 
@@ -75,14 +76,14 @@ coefficient. A minimum order quantity with a binary `y` per group, `sum(q * x) >
 `sum(q * x) - moq * y >= 0`:
 
 ```python
-terms = pl.concat(
-    [
-        x.select("group", "idx", coef=pl.col("quantity")),
-        y.select("group", "idx", coef=-pl.col("moq")),
-    ],
-    how="vertical_relaxed",
+add_constrs(
+    model,
+    [(x, "quantity"), (y, -pl.col("moq"))],
+    by="group",
+    sense=">=",
+    rhs=0.0,
+    name="moq",
 )
-grb(terms).add_constrs(model, by="group", sense=">=", rhs=0.0, coef="coef", name="moq")
 ```
 
 !!! tip "Index dtypes"
