@@ -4,7 +4,7 @@
 //! Gurobi needs one contiguous array. Nulls are rejected: Gurobi has no notion of a missing value.
 
 use std::borrow::Cow;
-use std::ffi::{CString, c_char, c_int};
+use std::ffi::{c_char, c_int};
 
 use arrow_array::cast::AsArray;
 use arrow_array::types::{Float64Type, Int32Type, UInt8Type, UInt32Type};
@@ -155,20 +155,58 @@ fn chars_of<'a>(
     }
 }
 
-/// Names must be NUL-terminated for C, so unlike the numeric columns these are always copied.
-pub fn cstrings(name: &str, col: &PyChunkedArray, len: Option<usize>) -> PyResult<Vec<CString>> {
+/// NUL-terminated copies of a String column, packed into one buffer. Names must be terminated
+/// for C, so unlike the numeric columns these are always copied, but in one allocation rather
+/// than one per name.
+#[derive(Debug)]
+pub struct CStrings {
+    bytes: Vec<u8>,
+    starts: Vec<usize>,
+}
+
+impl CStrings {
+    /// A pointer to each name, in the form the `char **` arguments of the Gurobi API take. The
+    /// pointers are valid for as long as `self` is.
+    pub fn ptrs(&self) -> Vec<*const c_char> {
+        self.starts
+            .iter()
+            .map(|&s| self.bytes[s..].as_ptr().cast())
+            .collect()
+    }
+
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.starts.len()
+    }
+
+    #[cfg(test)]
+    fn get(&self, i: usize) -> &std::ffi::CStr {
+        std::ffi::CStr::from_bytes_until_nul(&self.bytes[self.starts[i]..]).unwrap()
+    }
+}
+
+pub fn cstrings(name: &str, col: &PyChunkedArray, len: Option<usize>) -> PyResult<CStrings> {
     cstrings_of(name, col.chunks(), len)
 }
 
-fn cstrings_of(name: &str, chunks: &[ArrayRef], len: Option<usize>) -> PyResult<Vec<CString>> {
+fn cstrings_of(name: &str, chunks: &[ArrayRef], len: Option<usize>) -> PyResult<CStrings> {
     let chunks = checked(name, chunks, len)?;
-    let mut out = Vec::with_capacity(len.unwrap_or_default());
+    let rows: usize = chunks.iter().map(|c| c.len()).sum();
+    // Exactly the bytes of the names plus a terminator each. A sliced string-view chunk still
+    // points at its parent's data buffers, so buffer sizes would over-reserve.
+    let mut bytes = Vec::with_capacity(chunks.iter().map(text_len).sum::<usize>() + rows);
+    let mut starts = Vec::with_capacity(rows);
     let mut push = |s: Option<&str>| -> PyResult<()> {
         let s =
             s.ok_or_else(|| PyValueError::new_err(format!("column '{name}' contains nulls")))?;
-        let s = CString::new(s)
-            .map_err(|_| PyValueError::new_err(format!("column '{name}' contains a NUL byte")))?;
-        out.push(s);
+        if s.as_bytes().contains(&0) {
+            return Err(PyValueError::new_err(format!(
+                "column '{name}' contains a NUL byte"
+            )));
+        }
+        starts.push(bytes.len());
+        bytes.extend_from_slice(s.as_bytes());
+        bytes.push(0);
         Ok(())
     };
     for chunk in chunks {
@@ -179,7 +217,30 @@ fn cstrings_of(name: &str, chunks: &[ArrayRef], len: Option<usize>) -> PyResult<
             dt => return Err(type_error(name, dt, "String")),
         }
     }
-    Ok(out)
+    Ok(CStrings { bytes, starts })
+}
+
+/// The total length of the strings in a chunk, counting only the rows the chunk holds. Zero for
+/// types that are not strings, which `cstrings_of` rejects afterwards.
+fn text_len(chunk: &ArrayRef) -> usize {
+    match chunk.data_type() {
+        // The low 32 bits of a view are the string's length, inlined or not.
+        DataType::Utf8View => chunk
+            .as_string_view()
+            .views()
+            .iter()
+            .map(|&v| v as u32 as usize)
+            .sum(),
+        DataType::Utf8 => {
+            let offsets = chunk.as_string::<i32>().value_offsets();
+            (offsets[offsets.len() - 1] - offsets[0]) as usize
+        }
+        DataType::LargeUtf8 => {
+            let offsets = chunk.as_string::<i64>().value_offsets();
+            (offsets[offsets.len() - 1] - offsets[0]) as usize
+        }
+        _ => 0,
+    }
 }
 
 /// A List column read as compressed sparse rows: row `i` holds the items at
@@ -396,8 +457,31 @@ mod tests {
             Arc::new(StringViewArray::from(vec![long])),
         ];
         let got = cstrings_of("names", &chunks, Some(4)).unwrap();
-        let got: Vec<&str> = got.iter().map(|s| s.to_str().unwrap()).collect();
-        assert_eq!(got, ["x[1]", "", "\u{fc}", long]);
+        let strs: Vec<&str> = (0..got.len())
+            .map(|i| got.get(i).to_str().unwrap())
+            .collect();
+        assert_eq!(strs, ["x[1]", "", "\u{fc}", long]);
+        let ptrs = got.ptrs();
+        assert_eq!(ptrs.len(), 4);
+        // Each pointer reads as its name, NUL-terminated.
+        let via_ptr = unsafe { std::ffi::CStr::from_ptr(ptrs[3]) };
+        assert_eq!(via_ptr.to_str().unwrap(), long);
+        // The buffer was sized exactly: the names' bytes plus one terminator each.
+        let want = "x[1]".len() + "\u{fc}".len() + long.len() + 4;
+        assert_eq!(got.bytes.len(), want);
+        assert_eq!(got.bytes.capacity(), want);
+    }
+
+    #[test]
+    fn packed_names_are_sized_by_the_slice_not_the_parent() {
+        let long = "a name longer than twelve bytes, held in a data buffer";
+        let parent: Vec<&str> = std::iter::repeat_n(long, 1000).collect();
+        let chunks = arrays([StringViewArray::from(parent.clone()).slice(10, 2)]);
+        let got = cstrings_of("names", &chunks, Some(2)).unwrap();
+        assert_eq!(got.bytes.capacity(), 2 * (long.len() + 1));
+        let chunks = arrays([StringArray::from(parent).slice(10, 2)]);
+        let got = cstrings_of("names", &chunks, Some(2)).unwrap();
+        assert_eq!(got.bytes.capacity(), 2 * (long.len() + 1));
     }
 
     #[test]

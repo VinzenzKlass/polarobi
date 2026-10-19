@@ -20,3 +20,9 @@ pyo3-arrow = { version = "0.19", default-features = false }
 
 [target."cfg(unix)".dependencies]
 libc = "0.2.190"
+
+[profile.release]
+# One codegen unit with whole-program LTO: the hot paths cross the arrow and pyo3 crates.
+# Panics must keep unwinding, pyo3 turns them into `PanicException`.
+lto = "fat"
+codegen-units = 1
