@@ -102,6 +102,6 @@ version as gurobipy.
 ## Performance
 
 A reproducible benchmark builds the same allocation model with polarobi, in two common gurobipy styles and with
-gurobipy-pandas, on a Google Cloud VM. At ten million rows polarobi took 10.2 s, against 90.8 s for the faster
-gurobipy build and 146.2 s for gurobipy-pandas, with identical fingerprints; see [Benchmarks](../benchmarks.md) for
+gurobipy-pandas, on a Google Cloud VM. At ten million rows polarobi took 9.6 s, against 87.8 s for the faster
+gurobipy build and 143.0 s for gurobipy-pandas, with identical fingerprints; see [Benchmarks](../benchmarks.md) for
 the figures, the machine, the model and how to run it yourself.

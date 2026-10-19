@@ -86,6 +86,11 @@ add_constrs(
 )
 ```
 
+Sources need the `by` columns and may carry any others. Key dtypes are unified across sources (an `Int32` and an
+`Int64` key become `Int64`); keys that can't be unified raise a `TypeError` naming the source. Terms keep source
+order, and a variable repeated in one constraint has its coefficients summed. `add_constrs(model, [(df, c, v)], ...)`
+is the same as `grb(df).add_constrs(model, ..., coef=c, var=v)`.
+
 !!! tip "Index dtypes"
     `idx` columns from `add_vars` are `UInt32`, and are passed to Gurobi without copying. Other integer dtypes work
     too and are converted once.

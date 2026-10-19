@@ -69,8 +69,8 @@ What changed:
   `addVars` formats its keys.
 - **Lookups** like `x[o, v, w]` disappear. `x` already carries each variable's `idx` next to its keys, so selecting
   columns is enough. Where variables and data live in different frames, a join on the keys does the lookup.
-- **Expressions** become terms frames. Adding the breach variable to the quantity expression is a `concat` of the
-  two term frames.
+- **Expressions** become terms frames. Adding the breach variable to the quantity expression is a second source in
+  the list passed to `add_constrs`.
 - **Skipping groups** with `continue` becomes filtering the rows frame. The maximum constraint does not even need
   that: rows without terms are dropped by default. The minimum constraint does, because the breach term would
   otherwise make every vendor week non-empty.

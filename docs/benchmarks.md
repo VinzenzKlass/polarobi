@@ -4,17 +4,17 @@ description: How long polarobi takes to build a model compared to gurobipy and g
 ---
 
 ???+ tip "TL;DR"
-    Building a model with ten million variables and their constraints took **10.2 s with polarobi** and **90.8 s
-    with the fastest alternative**, a plain gurobipy loop: 8.9 times faster, with identical models. At a million rows
-    it was 0.9 s against 7.7 s. polarobi was the fastest build at every size, from 1.4 times faster at a thousand
+    Building a model with ten million variables and their constraints took **9.6 s with polarobi** and **87.8 s
+    with the fastest alternative**, a plain gurobipy loop: 9.2 times faster, with identical models. At a million rows
+    it was 0.8 s against 7.4 s. polarobi was the fastest build at every size, from 1.5 times faster at a thousand
     rows, and gurobipy-pandas the slowest from a million rows on.
 
 ## Build Time
 
 <div style="text-align: center" markdown>
 
-![Build time against model size, both axes linear, with shaded bands from the fastest to the slowest run: at 10M rows gurobipy-pandas takes 146.2 s, the two plain gurobipy builds 99.3 s and 90.8 s, and polarobi 10.2 s, close to the axis at every size](img/benchmark-build-time-light.svg#only-light)
-![Build time against model size, both axes linear, with shaded bands from the fastest to the slowest run: at 10M rows gurobipy-pandas takes 146.2 s, the two plain gurobipy builds 99.3 s and 90.8 s, and polarobi 10.2 s, close to the axis at every size](img/benchmark-build-time-dark.svg#only-dark)
+![Build time against model size, both axes linear, with shaded bands from the fastest to the slowest run: at 10M rows gurobipy-pandas takes 143.0 s, the two plain gurobipy builds 96.2 s and 87.8 s, and polarobi 9.6 s, close to the axis at every size](img/benchmark-build-time-light.svg#only-light)
+![Build time against model size, both axes linear, with shaded bands from the fastest to the slowest run: at 10M rows gurobipy-pandas takes 143.0 s, the two plain gurobipy builds 96.2 s and 87.8 s, and polarobi 9.6 s, close to the axis at every size](img/benchmark-build-time-dark.svg#only-dark)
 
 </div>
 
@@ -22,34 +22,34 @@ description: How long polarobi takes to build a model compared to gurobipy and g
 <table>
 <thead><tr><th>Rows</th><th>gurobipy, <code>addLConstr</code> loop</th><th>gurobipy, <code>addConstrs</code></th><th>gurobipy-pandas</th><th>polarobi</th><th>Speedup</th></tr></thead>
 <tbody>
-<tr class="summary"><td><label title="Show each run"><input type="checkbox" aria-label="Show each run at 1,000 rows">1,000</label></td><td>13 ms</td><td>22 ms</td><td>27 ms</td><td>9 ms</td><td title="Against gurobipy, addLConstr loop">1.4x</td></tr>
-<tr class="run"><td>run 1</td><td>13 ms</td><td>22 ms</td><td>26 ms</td><td>9 ms</td><td></td></tr>
-<tr class="run"><td>run 2</td><td>13 ms</td><td>23 ms</td><td>27 ms</td><td>9 ms</td><td></td></tr>
-<tr class="run"><td>run 3</td><td>13 ms</td><td>22 ms</td><td>27 ms</td><td>10 ms</td><td></td></tr>
+<tr class="summary"><td><label title="Show each run"><input type="checkbox" aria-label="Show each run at 1,000 rows">1,000</label></td><td>13 ms</td><td>22 ms</td><td>26 ms</td><td>9 ms</td><td title="Against gurobipy, addLConstr loop">1.5x</td></tr>
+<tr class="run"><td>run 1</td><td>13 ms</td><td>23 ms</td><td>26 ms</td><td>9 ms</td><td></td></tr>
+<tr class="run"><td>run 2</td><td>13 ms</td><td>22 ms</td><td>26 ms</td><td>8 ms</td><td></td></tr>
+<tr class="run"><td>run 3</td><td>13 ms</td><td>22 ms</td><td>27 ms</td><td>9 ms</td><td></td></tr>
 </tbody>
 <tbody>
-<tr class="summary"><td><label title="Show each run"><input type="checkbox" aria-label="Show each run at 10,000 rows">10,000</label></td><td>69 ms</td><td>101 ms</td><td>92 ms</td><td>20 ms</td><td title="Against gurobipy, addLConstr loop">3.5x</td></tr>
-<tr class="run"><td>run 1</td><td>70 ms</td><td>101 ms</td><td>92 ms</td><td>20 ms</td><td></td></tr>
-<tr class="run"><td>run 2</td><td>69 ms</td><td>101 ms</td><td>93 ms</td><td>20 ms</td><td></td></tr>
-<tr class="run"><td>run 3</td><td>67 ms</td><td>100 ms</td><td>91 ms</td><td>19 ms</td><td></td></tr>
+<tr class="summary"><td><label title="Show each run"><input type="checkbox" aria-label="Show each run at 10,000 rows">10,000</label></td><td>68 ms</td><td>100 ms</td><td>91 ms</td><td>18 ms</td><td title="Against gurobipy, addLConstr loop">3.9x</td></tr>
+<tr class="run"><td>run 1</td><td>70 ms</td><td>99 ms</td><td>91 ms</td><td>18 ms</td><td></td></tr>
+<tr class="run"><td>run 2</td><td>68 ms</td><td>101 ms</td><td>91 ms</td><td>18 ms</td><td></td></tr>
+<tr class="run"><td>run 3</td><td>67 ms</td><td>100 ms</td><td>92 ms</td><td>17 ms</td><td></td></tr>
 </tbody>
 <tbody>
-<tr class="summary"><td><label title="Show each run"><input type="checkbox" aria-label="Show each run at 100,000 rows">100,000</label></td><td>519 ms</td><td>635 ms</td><td>626 ms</td><td>79 ms</td><td title="Against gurobipy, addLConstr loop">6.5x</td></tr>
-<tr class="run"><td>run 1</td><td>518 ms</td><td>642 ms</td><td>629 ms</td><td>83 ms</td><td></td></tr>
-<tr class="run"><td>run 2</td><td>525 ms</td><td>631 ms</td><td>623 ms</td><td>77 ms</td><td></td></tr>
-<tr class="run"><td>run 3</td><td>514 ms</td><td>631 ms</td><td>624 ms</td><td>78 ms</td><td></td></tr>
+<tr class="summary"><td><label title="Show each run"><input type="checkbox" aria-label="Show each run at 100,000 rows">100,000</label></td><td>501 ms</td><td>608 ms</td><td>591 ms</td><td>71 ms</td><td title="Against gurobipy, addLConstr loop">7.1x</td></tr>
+<tr class="run"><td>run 1</td><td>499 ms</td><td>608 ms</td><td>595 ms</td><td>72 ms</td><td></td></tr>
+<tr class="run"><td>run 2</td><td>503 ms</td><td>612 ms</td><td>587 ms</td><td>71 ms</td><td></td></tr>
+<tr class="run"><td>run 3</td><td>502 ms</td><td>603 ms</td><td>591 ms</td><td>69 ms</td><td></td></tr>
 </tbody>
 <tbody>
-<tr class="summary"><td><label title="Show each run"><input type="checkbox" aria-label="Show each run at 1,000,000 rows">1,000,000</label></td><td>7.7 s</td><td>8.5 s</td><td>11.0 s</td><td>882 ms</td><td title="Against gurobipy, addLConstr loop">8.8x</td></tr>
-<tr class="run"><td>run 1</td><td>7.7 s</td><td>8.5 s</td><td>11.0 s</td><td>885 ms</td><td></td></tr>
-<tr class="run"><td>run 2</td><td>7.7 s</td><td>8.5 s</td><td>11.0 s</td><td>879 ms</td><td></td></tr>
-<tr class="run"><td>run 3</td><td>7.7 s</td><td>8.6 s</td><td>10.9 s</td><td>884 ms</td><td></td></tr>
+<tr class="summary"><td><label title="Show each run"><input type="checkbox" aria-label="Show each run at 1,000,000 rows">1,000,000</label></td><td>7.4 s</td><td>8.2 s</td><td>10.5 s</td><td>812 ms</td><td title="Against gurobipy, addLConstr loop">9.1x</td></tr>
+<tr class="run"><td>run 1</td><td>7.4 s</td><td>8.2 s</td><td>10.4 s</td><td>803 ms</td><td></td></tr>
+<tr class="run"><td>run 2</td><td>7.4 s</td><td>8.1 s</td><td>10.5 s</td><td>816 ms</td><td></td></tr>
+<tr class="run"><td>run 3</td><td>7.4 s</td><td>8.2 s</td><td>10.5 s</td><td>816 ms</td><td></td></tr>
 </tbody>
 <tbody>
-<tr class="summary"><td><label title="Show each run"><input type="checkbox" aria-label="Show each run at 10,000,000 rows">10,000,000</label></td><td>90.8 s</td><td>99.3 s</td><td>146.2 s</td><td>10.2 s</td><td title="Against gurobipy, addLConstr loop">8.9x</td></tr>
-<tr class="run"><td>run 1</td><td>90.5 s</td><td>99.0 s</td><td>146.0 s</td><td>10.2 s</td><td></td></tr>
-<tr class="run"><td>run 2</td><td>91.2 s</td><td>99.6 s</td><td>145.9 s</td><td>10.2 s</td><td></td></tr>
-<tr class="run"><td>run 3</td><td>90.7 s</td><td>99.3 s</td><td>146.6 s</td><td>10.2 s</td><td></td></tr>
+<tr class="summary"><td><label title="Show each run"><input type="checkbox" aria-label="Show each run at 10,000,000 rows">10,000,000</label></td><td>87.7 s</td><td>96.2 s</td><td>143.0 s</td><td>9.6 s</td><td title="Against gurobipy, addLConstr loop">9.2x</td></tr>
+<tr class="run"><td>run 1</td><td>87.2 s</td><td>96.2 s</td><td>143.0 s</td><td>9.6 s</td><td></td></tr>
+<tr class="run"><td>run 2</td><td>87.8 s</td><td>96.4 s</td><td>143.4 s</td><td>9.6 s</td><td></td></tr>
+<tr class="run"><td>run 3</td><td>88.2 s</td><td>96.0 s</td><td>142.7 s</td><td>9.6 s</td><td></td></tr>
 </tbody>
 </table>
 </div>
@@ -63,8 +63,8 @@ hovering it names that build: the gurobipy `addLConstr` loop at every size. All 
 
 <div style="text-align: center" markdown>
 
-![Time per phase at 10M rows: variables 24.7 s with the gurobipy loop, 24.9 s with addConstrs, 24.9 s with gurobipy-pandas and 5.1 s with polarobi; constraints 66.0 s, 74.4 s, 121.1 s and 5.1 s](img/benchmark-phases-light.svg#only-light)
-![Time per phase at 10M rows: variables 24.7 s with the gurobipy loop, 24.9 s with addConstrs, 24.9 s with gurobipy-pandas and 5.1 s with polarobi; constraints 66.0 s, 74.4 s, 121.1 s and 5.1 s](img/benchmark-phases-dark.svg#only-dark)
+![Time per phase at 10M rows: variables 24.2 s with the gurobipy loop, 24.5 s with addConstrs, 24.0 s with gurobipy-pandas and 4.8 s with polarobi; constraints 63.6 s, 71.8 s, 119.0 s and 4.8 s](img/benchmark-phases-light.svg#only-light)
+![Time per phase at 10M rows: variables 24.2 s with the gurobipy loop, 24.5 s with addConstrs, 24.0 s with gurobipy-pandas and 4.8 s with polarobi; constraints 63.6 s, 71.8 s, 119.0 s and 4.8 s](img/benchmark-phases-dark.svg#only-dark)
 
 </div>
 
@@ -110,12 +110,12 @@ hardware:
 
 - **Machine:** `c4-highmem-16` in `europe-west1-c`, an Intel Granite Rapids CPU with one vCPU per core, limited to 4
   visible cores, and 124 GB of memory.
-- **System:** Ubuntu 26.04 minimal (`ubuntu-minimal-2604-resolute-amd64`), Linux 7.0.0-1011-gcp.
-- **Software:** Python 3.14.7, polarobi 0.1.4, polars 2.0.0, gurobipy 14.0.0b1, gurobipy-pandas 1.2.2 and pandas
+- **System:** Ubuntu 26.04 minimal (`ubuntu-minimal-2604-resolute-amd64`), Linux 7.0.0-1014-gcp.
+- **Software:** Python 3.14.7, polarobi 0.1.5, polars 2.0.0, gurobipy 14.0.0b1, gurobipy-pandas 1.2.2 and pandas
   3.0.6.
 
 All its cores are of one type, so the run needs no CPU pinning. From a million rows on, the three runs of every build
-stayed within 1% of each other; below that, where a run takes milliseconds, within 8%.
+stayed within 2% of each other; below that, where a run takes milliseconds, within 6%.
 
 ## Caveats
 

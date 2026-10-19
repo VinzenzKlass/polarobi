@@ -39,15 +39,8 @@ class AddVars:
 
 
 @dataclass(frozen=True, slots=True)
-class TermSource:
-    terms: pl.DataFrame
-    coef: IntoColumn | None = None
-    var: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
 class AddConstrs:
-    terms: pl.DataFrame | tuple[TermSource, ...]
+    terms: pl.DataFrame
     by: tuple[str, ...]
     sense: Sense | pl.Series | pl.Expr
     rows: pl.DataFrame | None = None

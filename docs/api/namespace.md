@@ -13,20 +13,7 @@ take the gurobipy model to work on as their first argument.
 Variables and constraints are identified by an `idx` column holding their Gurobi column or row index at creation.
 Like `Var.index`, these shift when elements before them are removed. If the model has pending deletions from
 `model.remove(...)`, polarobi calls `model.update()` first so its indices stay aligned with Gurobi's; otherwise it
-leaves the model lazy.
-
-::: polarobi._api
-    options:
-        members:
-            - Coef
-            - IntoColumn
-            - Sense
-            - Source
-            - VType
-            - add_var
-            - add_constrs
-        show_root_heading: false
-        show_root_toc_entry: false
+leaves the model lazy. The types used in the signatures are documented under [`polarobi`](polarobi.md).
 
 ::: polarobi._namespace.GurobiFrame
     options:

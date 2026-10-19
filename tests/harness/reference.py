@@ -16,16 +16,7 @@ from typing import Any
 import gurobipy as gp
 import polars as pl
 
-from tests.harness.specs import (
-    AddConstrs,
-    AddVar,
-    AddVars,
-    GetAttr,
-    IntoColumn,
-    Kind,
-    SetAttr,
-    TermSource,
-)
+from tests.harness.specs import AddConstrs, AddVar, AddVars, GetAttr, IntoColumn, Kind, SetAttr
 
 type Key = tuple[Any, ...]
 
@@ -70,34 +61,19 @@ def add_vars(model: gp.Model, spec: AddVars) -> pl.DataFrame:
 
 def add_constrs(model: gp.Model, spec: AddConstrs) -> pl.DataFrame:
     by = list(spec.by)
-    sources = (
-        spec.terms
-        if isinstance(spec.terms, tuple)
-        else (TermSource(spec.terms, spec.coef, spec.var),)
-    )
+    terms = spec.terms
     model.update()
     columns = model.getVars()
-    term_keys: list[Key] = []
-    var_index: list[int] = []
-    coefs: list[float] = []
-    for source in sources:
-        frame = source.terms
-        source_coefs = _floats(frame, 1.0 if source.coef is None else source.coef)
-        assert source_coefs is not None
-        coefs.extend(source_coefs)
-        # Without key columns every term has the empty key.
-        term_keys.extend(list(frame.select(by).iter_rows()) if by else [()] * frame.height)
-        var_index.extend(frame.get_column(source.var or "idx").to_list())
+    coefs = _floats(terms, spec.coef)
+    assert coefs is not None
+    # Without key columns every term has the empty key.
+    term_keys: list[Key] = list(terms.select(by).iter_rows()) if by else [()] * terms.height
+    var_index: list[int] = terms.get_column(spec.var).to_list()
 
     if spec.rows is None:
         # Without keys all terms form one constraint, if there are any.
         row_keys = list(dict.fromkeys(term_keys))
-        key_schema = (
-            pl.concat([s.terms.select(by) for s in sources], how="vertical_relaxed").schema
-            if sources
-            else dict.fromkeys(by, pl.Null)
-        )
-        rows = pl.DataFrame(row_keys, schema=key_schema, orient="row")
+        rows = pl.DataFrame(row_keys, schema=terms.select(by).schema, orient="row")
     else:
         rows = spec.rows
         row_keys = list(rows.select(by).iter_rows())

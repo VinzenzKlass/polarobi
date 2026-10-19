@@ -20,17 +20,19 @@ Everything is a frame with an `idx` column:
 
 - `add_vars` returns the input frame plus `idx`, the Gurobi column index of each row's variable.
 - `add_constrs` is called on a **terms** frame (one row per variable in a constraint: key columns,
-  `idx`, coefficient) and returns the **rows** (one per constraint) plus `idx`, the constraint's row index.
+  `idx`, coefficient), or `polarobi.add_constrs` on a list of them, and returns the **rows** (one per constraint) plus
+  `idx`, the constraint's row index.
 - `get` / `set` read and write attributes for every row via `idx`. They also work on any filtered or
   joined frame derived from one.
 
 Lookups like `x[a, b]` become joins that bring `idx` along. `quicksum` / `LinExpr` become terms frames.
-Adding two expressions becomes `pl.concat` of their terms. Loops become one call per family.
+Adding two expressions becomes a list of sources in `polarobi.add_constrs`. Loops become one call per family.
 
 ## Setup
 
 ```python
 import gurobipy as gp
+import polarobi
 import polars as pl
 from polarobi import (
     GurobiFrame as grb,
@@ -124,8 +126,12 @@ polarobi.add_constrs(
 # Big-M linking x <= M*y per site: same pattern, y with coef=-M
 ```
 
-Use `how="vertical_relaxed"` in `concat` so differing dtypes (for example a literal `coef=1.0` next to an
-`i64` column) unify instead of failing.
+`polarobi.add_constrs(model, terms, rows=None, *, by, sense, rhs=0.0, name=None, var="idx", coef=1.0,
+drop_empty=True, idx="idx")` is the same call as `grb(terms).add_constrs(model, rows, ...)`, but `terms` may
+also be a list of sources: `frame` (coef 1, index `idx`), `(frame, coef)` or `(frame, coef, var)`. `coef` is a
+scalar, column name, `pl.Expr` or `pl.Series` evaluated against that frame; `var` / `coef` keywords only apply
+to a single frame. Sources need the `by` columns, extra columns are ignored, and key dtypes unify (`i32` with
+`i64`). Don't hand-build `pl.concat(..., how="vertical_relaxed")` terms frames for this.
 
 ## Results and attributes
 
@@ -152,10 +158,7 @@ td = grb(x).tupledict(model, ["order", "week"])  # gp.tupledict keyed like addVa
 model.addLConstr(td["o1", "2026-01"] + td["o1", "2026-02"] <= 1)
 
 extra = polarobi.add_var(model, name="extra")
-terms = pl.concat(
-    [x.select("idx", coef=pl.col("q")), extra.with_columns(coef=pl.lit(-1.0))],
-    how="vertical_relaxed",
-)
+polarobi.add_constrs(model, [(x, "q"), (extra, -1.0)], by=[], sense="<=", rhs=0.0)
 ```
 
 Removing elements with `model.remove(...)` shifts the indices of later elements after the next update,
