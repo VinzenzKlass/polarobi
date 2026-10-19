@@ -32,7 +32,9 @@ Adding two expressions becomes `pl.concat` of their terms. Loops become one call
 ```python
 import gurobipy as gp
 import polars as pl
-from polarobi import GurobiFrame as grb   # typed form of df.grb; prefer it, type checkers can't see df.grb
+from polarobi import (
+    GurobiFrame as grb,
+)  # typed form of df.grb; prefer it, type checkers can't see df.grb
 
 model = gp.Model()
 ```
@@ -68,7 +70,9 @@ Each group of terms with the same key becomes `sum(coef * x[var]) <sense> rhs`.
 grb(x).add_constrs(model, by="order", sense="<=", rhs=1.0, name="once")
 
 # Per-constraint rhs from a rows frame; coef from a column of the terms:
-grb(x).add_constrs(model, capacity, by="factory", sense="<=", rhs="capacity", coef="quantity", name="cap")
+grb(x).add_constrs(
+    model, capacity, by="factory", sense="<=", rhs="capacity", coef="quantity", name="cap"
+)
 ```
 
 Key points:
@@ -90,17 +94,25 @@ Common shapes:
 ```python
 # Terms from a join (the "lookup")
 terms = x.join(tooling, on="product").select("tooling", "week", "idx", coef=pl.col("hours"))
-grb(terms).add_constrs(model, tool_cap, by=["tooling", "week"], sense="<=", rhs="capacity", coef="coef")
+grb(terms).add_constrs(
+    model, tool_cap, by=["tooling", "week"], sense="<=", rhs="capacity", coef="coef"
+)
 
 # Expression spanning several families: concat terms
 terms = pl.concat(
-    [x_a.select("factory", "idx", coef=pl.col("qty")), x_b.select("factory", "idx", coef=pl.col("qty"))],
+    [
+        x_a.select("factory", "idx", coef=pl.col("qty")),
+        x_b.select("factory", "idx", coef=pl.col("qty")),
+    ],
     how="vertical_relaxed",
 )
 
 # Variable on the right-hand side moves left with a negated coef: sum(q*x) >= moq*y  ->  sum(q*x) - moq*y >= 0
 terms = pl.concat(
-    [x.select("group", "idx", coef=pl.col("quantity")), y.select("group", "idx", coef=-pl.col("moq"))],
+    [
+        x.select("group", "idx", coef=pl.col("quantity")),
+        y.select("group", "idx", coef=-pl.col("moq")),
+    ],
     how="vertical_relaxed",
 )
 grb(terms).add_constrs(model, by="group", sense=">=", rhs=0.0, coef="coef", name="moq")
@@ -115,12 +127,12 @@ Use `how="vertical_relaxed"` in `concat` so differing dtypes (for example a lite
 
 ```python
 model.optimize()
-sol = grb(x).get(model, "X").filter(pl.col("X") > 0.5)       # adds column "X"
-duals = grb(cap_rows).get(model, "Pi")                        # constraints work the same
-prio = grb(x).get(model, "BranchPriority", dtype=pl.Int32)    # int attributes need dtype
+sol = grb(x).get(model, "X").filter(pl.col("X") > 0.5)  # adds column "X"
+duals = grb(cap_rows).get(model, "Pi")  # constraints work the same
+prio = grb(x).get(model, "BranchPriority", dtype=pl.Int32)  # int attributes need dtype
 
-grb(x.filter(~pl.col("allowed"))).set(model, "UB", 0.0)      # scalar, column name or Series
-grb(y).set(model, "BranchPriority", 10)                       # ints go through the int API
+grb(x.filter(~pl.col("allowed"))).set(model, "UB", 0.0)  # scalar, column name or Series
+grb(y).set(model, "BranchPriority", 10)  # ints go through the int API
 ```
 
 - Reading attributes of elements added since the last `update()` / `optimize()` raises `GurobiError`
@@ -131,13 +143,16 @@ grb(y).set(model, "BranchPriority", 10)                       # ints go through 
 ## Mixing with gurobipy
 
 ```python
-vars_ = grb(x).handles(model)                         # list[gp.Var], row order
-td = grb(x).tupledict(model, ["order", "week"])       # gp.tupledict keyed like addVars
+vars_ = grb(x).handles(model)  # list[gp.Var], row order
+td = grb(x).tupledict(model, ["order", "week"])  # gp.tupledict keyed like addVars
 model.addLConstr(td["o1", "2026-01"] + td["o1", "2026-02"] <= 1)
 
-v = model.addVar(name="extra"); model.update()
-terms = pl.concat([x.select("idx", coef=pl.col("q")), pl.DataFrame({"idx": [v.index], "coef": [-1.0]})],
-                  how="vertical_relaxed")
+v = model.addVar(name="extra")
+model.update()
+terms = pl.concat(
+    [x.select("idx", coef=pl.col("q")), pl.DataFrame({"idx": [v.index], "coef": [-1.0]})],
+    how="vertical_relaxed",
+)
 ```
 
 Removing elements with `model.remove(...)` shifts the indices of later elements after the next update,
