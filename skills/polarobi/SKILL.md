@@ -105,22 +105,11 @@ grb(terms).add_constrs(
 
 # Expression spanning several families: module-level add_constrs takes a list of sources
 # Each source is frame, (frame, coef), or (frame, coef, var)
-polarobi.add_constrs(
-    model,
-    [(x_a, "qty"), (x_b, "qty")],
-    by="factory",
-    sense="<=",
-    rhs=100.0,
-)
+polarobi.add_constrs(model, [(x_a, "qty"), (x_b, "qty")], by="factory", sense="<=", rhs=100.0)
 
 # Variable on the right-hand side moves left with a negated coef: sum(q*x) >= moq*y  ->  sum(q*x) - moq*y >= 0
 polarobi.add_constrs(
-    model,
-    [(x, "quantity"), (y, -pl.col("moq"))],
-    by="group",
-    sense=">=",
-    rhs=0.0,
-    name="moq",
+    model, [(x, "quantity"), (y, -pl.col("moq"))], by="group", sense=">=", rhs=0.0, name="moq"
 )
 
 # Big-M linking x <= M*y per site: same pattern, y with coef=-M

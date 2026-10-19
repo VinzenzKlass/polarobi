@@ -61,14 +61,8 @@ factory, used by both kinds of demand:
 ```python
 from polarobi import add_constrs
 
-add_constrs(
-    model,
-    [(x_dist, "quantity"), (x_stock, "quantity")],
-    factories,
-    by=["factory", "week"],
-    sense="<=",
-    rhs="max_quantity",
-)
+terms = [(x_dist, "quantity"), (x_stock, "quantity")]
+add_constrs(model, terms, factories, by=["factory", "week"], sense="<=", rhs="max_quantity")
 ```
 
 Variables that appear on the right-hand side of a mathematical formulation move to the left with a negated
@@ -77,12 +71,7 @@ coefficient. A minimum order quantity with a binary `y` per group, `sum(q * x) >
 
 ```python
 add_constrs(
-    model,
-    [(x, "quantity"), (y, -pl.col("moq"))],
-    by="group",
-    sense=">=",
-    rhs=0.0,
-    name="moq",
+    model, [(x, "quantity"), (y, -pl.col("moq"))], by="group", sense=">=", rhs=0.0, name="moq"
 )
 ```
 
