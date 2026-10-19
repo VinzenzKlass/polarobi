@@ -10,7 +10,13 @@ import gurobipy as gp
 import polarobi as polarobi  # registers df.grb
 import polars as pl
 
-from tests.harness.specs import AddConstrs, AddVars, GetAttr, Kind, SetAttr
+from tests.harness.specs import AddConstrs, AddVar, AddVars, GetAttr, Kind, SetAttr
+
+
+def add_var(model: gp.Model, spec: AddVar) -> pl.DataFrame:
+    return polarobi.add_var(
+        model, lb=spec.lb, ub=spec.ub, obj=spec.obj, vtype=spec.vtype, name=spec.name, idx=spec.idx
+    )
 
 
 def add_vars(model: gp.Model, spec: AddVars) -> pl.DataFrame:

@@ -17,6 +17,16 @@ type Kind = Literal["var", "constr"]
 
 
 @dataclass(frozen=True, slots=True)
+class AddVar:
+    lb: float = 0.0
+    ub: float = float("inf")
+    obj: float = 0.0
+    vtype: VType = "C"
+    name: str | None = None
+    idx: str = "idx"
+
+
+@dataclass(frozen=True, slots=True)
 class AddVars:
     keys: pl.DataFrame
     by: tuple[str, ...] | None = None

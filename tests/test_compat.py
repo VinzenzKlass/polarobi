@@ -151,3 +151,35 @@ def test_null_keys_group_like_gurobipy(model: gp.Model) -> None:
 def test_stub_matches_runtime_namespace() -> None:
     # `grb(df)` relies on the runtime-registered namespace being `GurobiFrame`.
     assert type(pl.DataFrame({"k": [1]}).grb) is polarobi.GurobiFrame
+
+
+def test_add_var(model: gp.Model) -> None:
+    model.addVar(name="before")
+    unnamed = polarobi.add_var(model)
+    air = polarobi.add_var(
+        model, lb=0.0, ub=250.0, obj=-10.0, vtype="C", name="air_expansion", idx="col"
+    )
+    assert unnamed.schema == {"idx": pl.UInt32}
+    assert unnamed.item(0, "idx") == 1
+    assert air.item(0, "col") == 2
+    assert model.NumVars == 0  # no update() performed
+
+    terms = pl.concat(
+        [
+            unnamed.select("idx", coef=pl.lit(1.0)),
+            air.select(pl.col("col").alias("idx"), coef=pl.lit(-1.0)),
+        ]
+    )
+    constr = terms.grb.add_constrs(model, by=[], sense=">=", rhs=0.0, coef="coef", name="link")
+    air.grb.set(model, "UB", 300.0, idx="col")
+
+    model.ModelSense = gp.GRB.MINIMIZE
+    model.optimize()
+    v_unnamed, v_air = unnamed.grb.handles(model)[0], air.grb.handles(model, idx="col")[0]
+    assert v_unnamed.index == unnamed.item(0, "idx") == 1
+    assert v_air.index == air.item(0, "col") == 2
+    assert v_unnamed.VarName == "C1"
+    assert v_air.VarName == "air_expansion"
+    assert unnamed.grb.get(model, "X").item(0, "X") == pytest.approx(300.0)
+    assert air.grb.get(model, "X", idx="col").item(0, "X") == pytest.approx(300.0)
+    assert constr.grb.get(model, "Slack").item(0, "Slack") == pytest.approx(0.0)

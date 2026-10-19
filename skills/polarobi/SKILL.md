@@ -60,6 +60,9 @@ x = grb(shipments).add_vars(
   Omit it for huge models to save time and memory. Datetime keys can't be formatted into names; use an
   expression. Prefer `pl.concat_str` over `pl.format` (which can panic in polars 2.0.0).
 - `idx="..."` renames the index column, which helps when one frame carries several families.
+- `polarobi.add_var(model, *, lb=0.0, ub=float("inf"), obj=0.0, vtype="C", name=None, idx="idx")` adds a
+  single variable and returns a one-row frame with `idx` (`name` used as is, without brackets), so it can
+  appear in terms frames without calling `model.update()`.
 
 ## Constraints
 
@@ -147,17 +150,18 @@ vars_ = grb(x).handles(model)  # list[gp.Var], row order
 td = grb(x).tupledict(model, ["order", "week"])  # gp.tupledict keyed like addVars
 model.addLConstr(td["o1", "2026-01"] + td["o1", "2026-02"] <= 1)
 
-v = model.addVar(name="extra")
-model.update()
+extra = polarobi.add_var(model, name="extra")
 terms = pl.concat(
-    [x.select("idx", coef=pl.col("q")), pl.DataFrame({"idx": [v.index], "coef": [-1.0]})],
+    [x.select("idx", coef=pl.col("q")), extra.with_columns(coef=pl.lit(-1.0))],
     how="vertical_relaxed",
 )
 ```
 
 Removing elements with `model.remove(...)` shifts the indices of later elements after the next update,
-and old `idx` columns then point at the wrong elements. After removals, re-read indices
-(for example `[v.index for v in grb(x).handles(model)]`) before reusing the frames.
+and old `idx` columns then point at the wrong elements. If the model has pending deletions, any polarobi
+call runs `model.update()` first to sync indices (otherwise polarobi leaves the model lazy). After
+removals, re-read indices (for example `[v.index for v in grb(x).handles(model)]`) before reusing the
+frames.
 
 ## Determinism
 
