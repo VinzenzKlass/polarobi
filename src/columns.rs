@@ -83,7 +83,7 @@ pub fn f64s<'a>(
     f64s_of(name, dtype(col), col.chunks(), len)
 }
 
-fn f64s_of<'a>(
+pub fn f64s_of<'a>(
     name: &str,
     dtype: &DataType,
     chunks: &'a [ArrayRef],
@@ -106,7 +106,7 @@ pub fn indices<'a>(
     indices_of(name, dtype(col), col.chunks(), len)
 }
 
-fn indices_of<'a>(
+pub fn indices_of<'a>(
     name: &str,
     dtype: &DataType,
     chunks: &'a [ArrayRef],
@@ -189,7 +189,7 @@ pub fn cstrings(name: &str, col: &PyChunkedArray, len: Option<usize>) -> PyResul
     cstrings_of(name, col.chunks(), len)
 }
 
-fn cstrings_of(name: &str, chunks: &[ArrayRef], len: Option<usize>) -> PyResult<CStrings> {
+pub fn cstrings_of(name: &str, chunks: &[ArrayRef], len: Option<usize>) -> PyResult<CStrings> {
     let chunks = checked(name, chunks, len)?;
     let rows: usize = chunks.iter().map(|c| c.len()).sum();
     // Exactly the bytes of the names plus a terminator each. A sliced string-view chunk still

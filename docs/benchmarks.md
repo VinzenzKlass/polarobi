@@ -144,3 +144,40 @@ page from a result file and prints the table.
 `--cpus` pins the run to the given logical CPUs. On CPUs with performance and efficiency cores, such as Intel's
 12th generation and later, pick one thread per performance core: otherwise the operating system moves the run
 between core types, and identical builds differ by a factor of two.
+
+## Rust Stages
+
+The build time above is dominated by Gurobi's own calls and by gurobipy's handle objects. The Rust stages in between,
+reading the columns, validating the rows and merging repeated variables, are measured separately under Valgrind by
+`benches/native.rs`: instruction counts with callgrind and allocated bytes with DHAT, on inputs the size of a
+million-term model. Those counts are reproducible on any machine, so every pull request compares them against its
+base commit in the `Benchmarks` workflow and reports the differences in the job summary and in a comment on the pull
+request. Nothing fails on a change, the numbers are there to read.
+
+`benches/timing.rs` times the same stages on the same inputs with a wall clock, which counts cannot replace: a change
+can trade instructions for cache misses, or spread work over threads. Timings are noisy, so the workflow runs the base
+and head builds alternately on the same runner and compares the minimum of each; the same binary against itself still
+differs by a few percent, which is the noise floor to read the time column against.
+
+On Linux, with Valgrind 3.19 or later installed:
+
+```bash
+cargo install iai-callgrind-runner --version 0.16.1
+cargo bench --bench native -- --save-baseline=base   # before a change
+cargo bench --bench native -- --baseline=base        # after it
+```
+
+The timings run anywhere:
+
+```bash
+cargo bench --bench timing
+```
+
+`benchmarks/ab.py` times every call of the Python API end to end, from `add_vars` to `handles`, on inputs of a given
+size, and the workflow compares it the same way: the base commit's package, its Python sources from git and its
+extension from the same release build, shadows the head's through `PYTHONPATH` for the base runs. Each line it prints
+names the package it imported, so a wrong shadowing shows.
+
+```bash
+uv run --group bench python benchmarks/ab.py --rows 1000000
+```

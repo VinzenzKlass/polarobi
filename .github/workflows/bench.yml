@@ -1,0 +1,188 @@
+name: Benchmarks
+# Three measurements of a pull request against its base commit, on the same runner, written to
+# the job summary and to one comment on the pull request, updated on every push. Nothing here
+# fails the build.
+#   - Instruction and allocation counts of the pure Rust stages under Valgrind, benches/native.rs,
+#     which do not depend on the runner's load.
+#   - Wall-clock timings of the same stages, benches/timing.rs, which do: the two builds run
+#     alternately and their minima are compared.
+#   - Every call of the Python API end to end, benchmarks/ab.py, the same way, with the base
+#     commit's package shadowing the head's through PYTHONPATH.
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  Rust:
+    # 24.04 ships Valgrind 3.22; Rust symbols need 3.19 or later to be demangled, or the
+    # benchmark functions are never found and every count is zero.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: 3.14
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: astral-sh/setup-uv@v8.2.0
+        with:
+          enable-cache: true
+      - name: Install Valgrind and the iai-callgrind runner
+        # The runner's version must match the iai-callgrind crate in Cargo.lock.
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq valgrind
+          version=$(cargo metadata --format-version 1 --locked | python3 -c "import json,sys; print(next(p['version'] for p in json.load(sys.stdin)['packages'] if p['name'] == 'iai-callgrind'))")
+          cargo install iai-callgrind-runner --version "$version" --locked
+      - name: Measure the base commit
+        id: base
+        if: github.event_name == 'pull_request'
+        # A base from before the benchmarks were added has nothing to compare against. The timing
+        # binary and the package are kept aside to run alternately with the head's later.
+        run: |
+          base=${{ github.event.pull_request.base.sha }}
+          if git cat-file -e "$base:benches/native.rs" 2>/dev/null; then
+            git checkout --quiet "$base"
+            cargo bench --bench native --locked -- --save-baseline=base
+            cargo bench --bench timing --locked --no-run --message-format=json \
+              | python3 -c "import json,sys; print(next(m['executable'] for m in map(json.loads, sys.stdin) if m.get('executable') and m['target']['name'] == 'timing'))" \
+              | xargs -I{} cp {} timing-base
+            # The base's package without a wheel: its Python sources from git, its extension
+            # from the same release build the benches above already did most of the work for.
+            cargo build --release --lib --locked
+            mkdir base-pkg
+            git archive "$base" python/polarobi | tar -x -C base-pkg --strip-components=1
+            cp target/release/lib_native.so base-pkg/polarobi/_native.abi3.so
+            git checkout --quiet ${{ github.sha }}
+            echo "saved=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "The base commit has no benchmark, so this run is not compared."
+          fi
+      - name: Measure this commit
+        # JSON on stdout, one line per benchmark; the usual report goes to stderr for the log.
+        run: |
+          if [ "${{ steps.base.outputs.saved }}" = true ]; then
+            cargo bench --bench native --locked -- --output-format=json --baseline=base > bench.json
+          else
+            cargo bench --bench native --locked -- --output-format=json > bench.json
+          fi
+          cargo bench --bench timing --locked --no-run --message-format=json \
+            | python3 -c "import json,sys; print(next(m['executable'] for m in map(json.loads, sys.stdin) if m.get('executable') and m['target']['name'] == 'timing'))" \
+            | xargs -I{} cp {} timing-head
+      - name: Time both builds alternately
+        # Five rounds of base then head, so that load on the runner hits both alike. Each run
+        # already takes the minimum of twenty repeats; the summary takes the minimum over rounds.
+        run: |
+          for round in 1 2 3 4 5; do
+            if [ -x timing-base ]; then
+              ./timing-base --json | sed 's/^{/{"build":"base",/' >> timing.json
+            fi
+            ./timing-head --json | sed 's/^{/{"build":"head",/' >> timing.json
+          done
+      - name: Build the model end to end with both builds alternately
+        # uv sync installs the head's extension; PYTHONPATH puts the base's package in front
+        # of it for the base runs. Each line names the package it imported, as a check.
+        run: |
+          uv sync --group bench --locked
+          for round in 1 2 3 4 5; do
+            if [ -d base-pkg ]; then
+              PYTHONPATH=base-pkg uv run --no-sync --group bench python benchmarks/ab.py --label base --repeats 2 >> ab.json
+            fi
+            uv run --no-sync --group bench python benchmarks/ab.py --label head --repeats 2 >> ab.json
+          done
+          cat ab.json
+      - name: Summarize and comment
+        if: always()
+        # bench.json: a benchmark's counts per line, against the baseline when the run had one.
+        # timing.json and ab.json: one run's timings per line, labelled by build.
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            const compared = '${{ steps.base.outputs.saved }}' === 'true';
+            const read = (file) => fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split(/\r?\n/).filter(Boolean).map((l) => JSON.parse(l)) : [];
+            const percent = (x) => x.toLocaleString('en-US', { signDisplay: 'always', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            const change = (text, now, old) => {
+              if (old === null || old === undefined) return text;
+              if (old === now) return `${text} (no change)`;
+              if (old === 0) return `${text} (new)`;
+              return `${text} (${percent(((now - old) / old) * 100)}%)`;
+            };
+            const fixed = (x, digits) => x.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+            const number = (v) => Object.values(v)[0];
+            const count = (metric) => {
+              if (!metric) return '';
+              const m = metric.metrics;
+              const [now, old] = 'Both' in m ? m.Both.map(number) : [number(Object.values(m)[0]), null];
+              return change(now.toLocaleString('en-US'), now, old);
+            };
+            // Per key and build: the minimum of `field` over the runs, and the median of `median`.
+            const median = (xs) => xs.toSorted((a, b) => a - b)[Math.floor(xs.length / 2)];
+            const stats = (records, key, field, mid) => {
+              const out = {};
+              for (const r of records) {
+                const per = ((out[key(r)] ??= {})[r.build] ??= { min: Infinity, mids: [] });
+                per.min = Math.min(per.min, r[field]);
+                per.mids.push(r[mid]);
+              }
+              return out;
+            };
+            // Minimum against the base's, since load only ever adds time, then the median as the typical run.
+            const versus = (t, format) => t?.head === undefined ? '' : `${change(format(t.head.min), t.head.min, t.base?.min ?? null)}, median ${format(median(t.head.mids))}`;
+            const timings = stats(read('timing.json'), (t) => t.name, 'min_ns', 'median_ns');
+            const columns = [['Callgrind', 'Ir', 'Instructions'], ['Dhat', 'TotalBytes', 'Allocated bytes']];
+            const rows = read('bench.json').map((bench) => {
+              const summaries = Object.assign({}, ...bench.profiles.map((p) => p.summaries.total.summary));
+              const cells = columns.map(([tool, metric]) => count(summaries[tool]?.[metric]));
+              const name = `${bench.function_name} ${bench.id}`;
+              return `| \`${name}\` | ${cells.join(' | ')} | ${versus(timings[name], (ns) => `${fixed(ns / 1e6, 2)} ms`)} |`;
+            });
+            const header = [`| Benchmark | ${columns.map((c) => c[2]).join(' | ')} | Time, min of runs (change), median |`, `|---|${'---:|'.repeat(columns.length + 1)}`];
+            const stages = rows.length ? [...header, ...rows] : ['The stage benchmarks produced no output.'];
+            const ab = read('ab.json');
+            const phases = ab.length ? Object.keys(ab[0]).filter((k) => !['build', 'rows', 'package'].includes(k)) : [];
+            const endToEnd = ab.length
+              ? [
+                  `| Call, ${ab[0].rows.toLocaleString('en-US')} rows | Time, min of runs (change), median |`,
+                  '|---|---:|',
+                  ...phases.map((field) => `| \`${field}\` | ${versus(stats(ab, () => field, field, field)[field], (s) => `${fixed(s, 3)} s`)} |`),
+                ]
+              : ['The end-to-end benchmark produced no output.'];
+            const body = [
+              '## Benchmarks',
+              '',
+              compared
+                ? 'Changes are against the pull request base commit. Counts are exact. Times compare the minimum over five alternating runs of each build, the observation least affected by load; the median shows a typical run.'
+                : 'Not compared: the base commit has no benchmark.',
+              '',
+              '### Rust stages',
+              '',
+              'Instructions and allocated bytes under Valgrind (`benches/native.rs`), and wall-clock time (`benches/timing.rs`).',
+              '',
+              ...stages,
+              '',
+              '### End to end',
+              '',
+              'Every call of the Python API on inputs of the given size (`benchmarks/ab.py`).',
+              '',
+              ...endToEnd,
+              '',
+            ].join('\n');
+            await core.summary.addRaw(body).write();
+            if (context.eventName !== 'pull_request') return;
+            const marker = '<!-- benchmarks/native -->';
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number });
+            const previous = comments.find((c) => c.body?.startsWith(marker));
+            const comment = `${marker}\n${body}`;
+            if (previous) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: previous.id, body: comment });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body: comment });
+            }
