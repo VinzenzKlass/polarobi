@@ -187,6 +187,9 @@ def test_add_constr(model: gp.Model) -> None:
     cap = polarobi.add_var(model, ub=10.0, name="cap", idx="col")
 
     single = x.grb.add_constr(model, sense="<=", rhs=12.0, coef="q", name="total", idx="c_idx")
+    direct = polarobi.add_constr(
+        model, cap, sense="<=", rhs=8.0, var="col", coef=2.0, name="direct"
+    )
     multi = polarobi.add_constr(
         model, [(x, "q"), (cap, -1.0, "col")], sense="<=", rhs=0.0, name="link"
     )
@@ -194,13 +197,18 @@ def test_add_constr(model: gp.Model) -> None:
 
     assert single.schema == {"c_idx": pl.UInt32}
     assert single.item(0, "c_idx") == 0
+    assert direct.schema == {"idx": pl.UInt32}
+    assert direct.item(0, "idx") == 1
     assert multi.schema == {"idx": pl.UInt32}
-    assert multi.item(0, "idx") == 1
+    assert multi.item(0, "idx") == 2
     c_single = _constr(model, "total")
+    c_direct = _constr(model, "direct")
     c_multi = _constr(model, "link")
     assert c_single.index == 0 and c_single.RHS == 12.0
-    assert c_multi.index == 1 and c_multi.RHS == 0.0
+    assert c_direct.index == 1 and c_direct.RHS == 8.0
+    assert c_multi.index == 2 and c_multi.RHS == 0.0
     assert model.getRow(c_single).size() == 5
+    assert model.getRow(c_direct).size() == 1
     assert model.getRow(c_multi).size() == 6
 
 
