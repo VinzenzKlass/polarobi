@@ -121,17 +121,20 @@ jobs:
               const [now, old] = 'Both' in m ? m.Both.map(number) : [number(Object.values(m)[0]), null];
               return change(now.toLocaleString('en-US'), now, old);
             };
-            // The minimum per build of a field, keyed by `key`.
-            const minima = (records, key, field) => {
+            // Per key and build: the minimum of `field` over the runs, and the median of `median`.
+            const median = (xs) => xs.toSorted((a, b) => a - b)[Math.floor(xs.length / 2)];
+            const stats = (records, key, field, mid) => {
               const out = {};
               for (const r of records) {
-                const per = (out[key(r)] ??= {});
-                per[r.build] = Math.min(per[r.build] ?? Infinity, r[field]);
+                const per = ((out[key(r)] ??= {})[r.build] ??= { min: Infinity, mids: [] });
+                per.min = Math.min(per.min, r[field]);
+                per.mids.push(r[mid]);
               }
               return out;
             };
-            const versus = (t, format) => t?.head === undefined ? '' : change(format(t.head), t.head, t.base ?? null);
-            const timings = minima(read('timing.json'), (t) => t.name, 'min_ns');
+            // Minimum against the base's, since load only ever adds time, then the median as the typical run.
+            const versus = (t, format) => t?.head === undefined ? '' : `${change(format(t.head.min), t.head.min, t.base?.min ?? null)}, median ${format(median(t.head.mids))}`;
+            const timings = stats(read('timing.json'), (t) => t.name, 'min_ns', 'median_ns');
             const columns = [['Callgrind', 'Ir', 'Instructions'], ['Dhat', 'TotalBytes', 'Allocated bytes']];
             const rows = read('bench.json').map((bench) => {
               const summaries = Object.assign({}, ...bench.profiles.map((p) => p.summaries.total.summary));
@@ -139,22 +142,22 @@ jobs:
               const name = `${bench.function_name} ${bench.id}`;
               return `| \`${name}\` | ${cells.join(' | ')} | ${versus(timings[name], (ns) => `${fixed(ns / 1e6, 2)} ms`)} |`;
             });
-            const header = [`| Benchmark | ${columns.map((c) => c[2]).join(' | ')} | Time, min of runs |`, `|---|${'---:|'.repeat(columns.length + 1)}`];
+            const header = [`| Benchmark | ${columns.map((c) => c[2]).join(' | ')} | Time, min of runs (change), median |`, `|---|${'---:|'.repeat(columns.length + 1)}`];
             const stages = rows.length ? [...header, ...rows] : ['The stage benchmarks produced no output.'];
             const ab = read('ab.json');
             const phases = ab.length ? Object.keys(ab[0]).filter((k) => !['build', 'rows', 'package'].includes(k)) : [];
             const endToEnd = ab.length
               ? [
-                  `| Call, ${ab[0].rows.toLocaleString('en-US')} rows | Time, min of runs |`,
+                  `| Call, ${ab[0].rows.toLocaleString('en-US')} rows | Time, min of runs (change), median |`,
                   '|---|---:|',
-                  ...phases.map((field) => `| \`${field}\` | ${versus(minima(ab, () => field, field)[field], (s) => `${fixed(s, 3)} s`)} |`),
+                  ...phases.map((field) => `| \`${field}\` | ${versus(stats(ab, () => field, field, field)[field], (s) => `${fixed(s, 3)} s`)} |`),
                 ]
               : ['The end-to-end benchmark produced no output.'];
             const body = [
               '## Benchmarks',
               '',
               compared
-                ? 'Changes are against the pull request base commit. Counts are exact; times are the minimum over five alternating runs of each build and still carry some noise.'
+                ? 'Changes are against the pull request base commit. Counts are exact. Times compare the minimum over five alternating runs of each build, the observation least affected by load; the median shows a typical run.'
                 : 'Not compared: the base commit has no benchmark.',
               '',
               '### Rust stages',
