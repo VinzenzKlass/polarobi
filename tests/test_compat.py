@@ -164,8 +164,8 @@ def test_add_var(model: gp.Model) -> None:
     assert air.item(0, "col") == 2
     assert model.NumVars == 0  # no update() performed
 
-    constr = polarobi.add_constrs(
-        model, [unnamed, (air, -1.0, "col")], by=[], sense=">=", rhs=0.0, name="link"
+    constr = polarobi.add_constr(
+        model, [unnamed, (air, -1.0, "col")], sense=">=", rhs=0.0, name="link"
     )
     air.grb.set(model, "UB", 300.0, idx="col")
 
@@ -179,6 +179,29 @@ def test_add_var(model: gp.Model) -> None:
     assert unnamed.grb.get(model, "X").item(0, "X") == pytest.approx(300.0)
     assert air.grb.get(model, "X", idx="col").item(0, "X") == pytest.approx(300.0)
     assert constr.grb.get(model, "Slack").item(0, "Slack") == pytest.approx(0.0)
+
+
+def test_add_constr(model: gp.Model) -> None:
+    keys = _keys.with_columns(q=pl.Series(_qty))
+    x = polarobi.GurobiFrame(keys).add_vars(model, by=("v", "w"), ub=1.0, obj="q", name="x")
+    cap = polarobi.add_var(model, ub=10.0, name="cap", idx="col")
+
+    single = x.grb.add_constr(model, sense="<=", rhs=12.0, coef="q", name="total", idx="c_idx")
+    multi = polarobi.add_constr(
+        model, [(x, "q"), (cap, -1.0, "col")], sense="<=", rhs=0.0, name="link"
+    )
+    model.update()
+
+    assert single.schema == {"c_idx": pl.UInt32}
+    assert single.item(0, "c_idx") == 0
+    assert multi.schema == {"idx": pl.UInt32}
+    assert multi.item(0, "idx") == 1
+    c_single = _constr(model, "total")
+    c_multi = _constr(model, "link")
+    assert c_single.index == 0 and c_single.RHS == 12.0
+    assert c_multi.index == 1 and c_multi.RHS == 0.0
+    assert model.getRow(c_single).size() == 5
+    assert model.getRow(c_multi).size() == 6
 
 
 def test_multi_source_add_constrs() -> None:

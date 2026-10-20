@@ -5,7 +5,7 @@ https://vinzenzklass.github.io/polarobi/
 """
 
 from polarobi import _library
-from polarobi._api import Coef, IntoColumn, Sense, Source, VType, add_constrs, add_var
+from polarobi._api import Coef, IntoColumn, Sense, Source, VType, add_constr, add_constrs, add_var
 
 _library.bind()
 
@@ -18,6 +18,7 @@ __all__ = [
     "Sense",
     "Source",
     "VType",
+    "add_constr",
     "add_constrs",
     "add_var",
 ]

@@ -7,12 +7,14 @@ description: API reference of the functions and types exported by the polarobi m
 
 Functions and types importable from `polarobi` directly. Like the [`DataFrame.grb`](namespace.md) methods, the
 functions take the gurobipy model to work on as their first argument and identify variables and constraints by an
-`idx` column. `add_constrs` also accepts a list of term sources, for constraints that span several variable families.
+`idx` column. `add_constr` and `add_constrs` also accept a list of term sources, for constraints that span several
+variable families.
 
 ::: polarobi._api
     options:
         members:
             - add_var
+            - add_constr
             - add_constrs
             - Coef
             - IntoColumn

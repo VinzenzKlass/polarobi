@@ -16,7 +16,16 @@ from typing import Any
 import gurobipy as gp
 import polars as pl
 
-from tests.harness.specs import AddConstrs, AddVar, AddVars, GetAttr, IntoColumn, Kind, SetAttr
+from tests.harness.specs import (
+    AddConstr,
+    AddConstrs,
+    AddVar,
+    AddVars,
+    GetAttr,
+    IntoColumn,
+    Kind,
+    SetAttr,
+)
 
 type Key = tuple[Any, ...]
 
@@ -57,6 +66,22 @@ def add_vars(model: gp.Model, spec: AddVars) -> pl.DataFrame:
         variables = [added[key] for key in index]
     model.update()
     return keys.with_columns(_index(spec.idx, variables))
+
+
+def add_constr(model: gp.Model, spec: AddConstr) -> pl.DataFrame:
+    return add_constrs(
+        model,
+        AddConstrs(
+            terms=spec.terms,
+            by=(),
+            sense=spec.sense,
+            rhs=spec.rhs,
+            name=spec.name,
+            var=spec.var,
+            coef=spec.coef,
+            idx=spec.idx,
+        ),
+    )
 
 
 def add_constrs(model: gp.Model, spec: AddConstrs) -> pl.DataFrame:

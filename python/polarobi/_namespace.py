@@ -44,6 +44,36 @@ class GurobiFrame:
             model, self._df, by=by, lb=lb, ub=ub, obj=obj, vtype=vtype, name=name, idx=idx
         )
 
+    def add_constr(
+        self,
+        model: gp.Model,
+        *,
+        sense: Sense,
+        rhs: float = 0.0,
+        name: str | None = None,
+        var: str = "idx",
+        coef: IntoColumn = 1.0,
+        idx: str = "idx",
+    ) -> pl.DataFrame:
+        """
+        Add a single linear constraint over all of this frame's terms,
+        `sum(coef * x[var]) <sense> rhs`, returning a one-row frame with its row index `idx`.
+
+        :param model: The Gurobi model to add the constraint to.
+        :param sense: Constraint sense: `<` or `<=` (less than or equal), `>` or `>=`
+            (greater than or equal), or `=` or `==` (equal).
+        :param rhs: Right-hand side for the constraint.
+        :param name: Name for the constraint.
+        :param var: Column name for variable indices in this frame.
+        :param coef: Coefficient for each term.
+        :param idx: Column name for the constraint index.
+        :return: One-row DataFrame with the constraint's index, or an empty DataFrame if this frame
+            has no rows.
+        """
+        return _api.add_constr(
+            model, self._df, sense=sense, rhs=rhs, name=name, var=var, coef=coef, idx=idx
+        )
+
     def add_constrs(
         self,
         model: gp.Model,

@@ -77,7 +77,7 @@ orders = pl.DataFrame({"order": ["o1", "o2"], "value": [3.0, 5.0]})
 model = gp.Model()
 
 x = grb(orders).add_vars(model, by=["order"], vtype="B", obj="value")
-assign = grb(x).add_constrs(model, by=[], sense="<=", rhs=1.0)
+assign = grb(x).add_constr(model, sense="<=", rhs=1.0)
 constraints = grb(assign).handles(model, kind="constr")  # list[gp.Constr]
 ```
 
