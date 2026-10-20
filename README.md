@@ -182,6 +182,16 @@ uv run --group bench python benchmarks/plot.py benchmarks/results/results.json
 `--cpus` pins the run to one thread per performance core; on hybrid CPUs the operating system otherwise moves it
 between core types. 10M rows need well over 11 GB of free memory.
 
+`benchmarks/native.rs` counts the instructions and allocated bytes of the pure Rust stages under Valgrind, on inputs the
+size of a million-term model. The `Benchmarks` workflow compares every pull request against its base commit and
+writes the differences to the job summary, without failing on them. On Linux, with Valgrind 3.19 or later installed:
+
+```shell
+cargo install iai-callgrind-runner --version 0.16.1
+cargo bench --bench native -- --save-baseline=base   # before a change
+cargo bench --bench native -- --baseline=base        # after it
+```
+
 ### Documentation
 
 The documentation is built with [Zensical](https://zensical.org/) from `docs/`, with the API reference generated from

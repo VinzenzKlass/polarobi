@@ -1,0 +1,56 @@
+name: Benchmarks
+# Instruction and allocation counts of the pure Rust stages, see benchmarks/native.rs. Measured
+# under Valgrind, so the numbers do not depend on the runner's load. A pull request is compared
+# against its base commit on the same runner; the comparison is written to the job summary and
+# never fails the build.
+on:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  Rust:
+    # 24.04 ships Valgrind 3.22; Rust symbols need 3.19 or later to be demangled, or the
+    # benchmark functions are never found and every count is zero.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: 3.14
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Valgrind and the iai-callgrind runner
+        # The runner's version must match the iai-callgrind crate in Cargo.lock.
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq valgrind
+          version=$(cargo metadata --format-version 1 --locked | python3 -c "import json,sys; print(next(p['version'] for p in json.load(sys.stdin)['packages'] if p['name'] == 'iai-callgrind'))")
+          cargo install iai-callgrind-runner --version "$version" --locked
+      - name: Measure the base commit
+        if: github.event_name == 'pull_request'
+        run: |
+          git checkout --quiet ${{ github.event.pull_request.base.sha }}
+          cargo bench --bench native --locked -- --save-baseline=base
+          git checkout --quiet ${{ github.sha }}
+      - name: Measure this commit
+        run: |
+          if [ "${{ github.event_name }}" = pull_request ]; then
+            cargo bench --bench native --locked -- --baseline=base 2>&1 | tee bench.txt
+          else
+            cargo bench --bench native --locked 2>&1 | tee bench.txt
+          fi
+      - name: Summarize
+        if: always()
+        run: |
+          {
+            echo '## Rust stage benchmarks'
+            echo
+            echo 'Instructions and allocations of the pure Rust stages under Valgrind, `benchmarks/native.rs`.'
+            echo 'Changes are against the pull request base commit.'
+            echo
+            echo '```'
+            sed 's/\x1b\[[0-9;]*m//g' bench.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -144,3 +144,20 @@ page from a result file and prints the table.
 `--cpus` pins the run to the given logical CPUs. On CPUs with performance and efficiency cores, such as Intel's
 12th generation and later, pick one thread per performance core: otherwise the operating system moves the run
 between core types, and identical builds differ by a factor of two.
+
+## Rust Stages
+
+The build time above is dominated by Gurobi's own calls and by gurobipy's handle objects. The Rust stages in between,
+reading the columns, validating the rows and merging repeated variables, are measured separately under Valgrind by
+`benchmarks/native.rs`: instruction counts with callgrind and allocated bytes with DHAT, on inputs the size of a
+million-term model. Those counts are reproducible on any machine, so every pull request compares them against its
+base commit in the `Benchmarks` workflow and reports the differences in the job summary. Nothing fails on a change,
+the numbers are there to read.
+
+On Linux, with Valgrind 3.19 or later installed:
+
+```bash
+cargo install iai-callgrind-runner --version 0.16.1
+cargo bench --bench native -- --save-baseline=base   # before a change
+cargo bench --bench native -- --baseline=base        # after it
+```

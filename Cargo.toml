@@ -6,7 +6,8 @@ description = "Add Gurobi variables and constraints straight from Arrow/polars m
 
 [lib]
 name = "_native"
-crate-type = ["cdylib"]
+# `rlib` too, so that `benchmarks/native.rs` can call the pure Rust stages directly.
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # Must match the arrow version pyo3-arrow is built on, or their types are incompatible.
@@ -17,6 +18,16 @@ pyo3 = { version = "0.29.3", features = ["abi3-py312"] }
 # We do not need buffer-protocol input. pyo3-arrow still compiles in the Rust numpy crate, which
 # only imports Python numpy when its functions are called; our code paths never call them.
 pyo3-arrow = { version = "0.19", default-features = false }
+
+[dev-dependencies]
+# Instruction and allocation counts under Valgrind, see benchmarks/native.rs. Linux only.
+iai-callgrind = "0.16.1"
+
+[[bench]]
+# Next to the Python benchmark rather than in Cargo's default `benches/`.
+name = "native"
+path = "benchmarks/native.rs"
+harness = false
 
 [target."cfg(unix)".dependencies]
 libc = "0.2.190"

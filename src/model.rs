@@ -165,11 +165,11 @@ pub fn add_constrs(
     api.check(cmodel.py(), model, rc)
 }
 
-type Csr = (Vec<usize>, Vec<c_int>, Vec<f64>);
+pub type Csr = (Vec<usize>, Vec<c_int>, Vec<f64>);
 
 /// Why a CSR cannot go to Gurobi.
 #[derive(Debug, PartialEq)]
-enum Invalid {
+pub enum Invalid {
     /// A row start decreases or lies beyond the items.
     Offsets,
     /// A variable index is negative or not below the model's variable count.
@@ -179,7 +179,7 @@ enum Invalid {
 /// Check what Gurobi would trust blindly or reject without saying why: the row starts `cbeg`,
 /// which it reads without bounds checks, and the variable indices `cind` against the model's
 /// `n_vars` variables. Returns the width `merge_repeats` needs, one past the largest index.
-fn validate(cbeg: &[usize], cind: &[c_int], n_vars: usize) -> Result<usize, Invalid> {
+pub fn validate(cbeg: &[usize], cind: &[c_int], n_vars: usize) -> Result<usize, Invalid> {
     let mut prev = 0;
     for &beg in cbeg {
         if beg < prev || beg > cind.len() {
@@ -204,7 +204,7 @@ fn validate(cbeg: &[usize], cind: &[c_int], n_vars: usize) -> Result<usize, Inva
 /// coefficients left to right, in the order of the terms; `None` if there are none. Gurobi itself
 /// then drops coefficients that are zero or tiny. Every index in `cind` is in `0..width`, and
 /// there are at most `c_int::MAX` rows.
-fn merge_repeats(cbeg: &[usize], cind: &[c_int], cval: &[f64], width: usize) -> Option<Csr> {
+pub fn merge_repeats(cbeg: &[usize], cind: &[c_int], cval: &[f64], width: usize) -> Option<Csr> {
     let rows = || {
         let ends = cbeg
             .iter()

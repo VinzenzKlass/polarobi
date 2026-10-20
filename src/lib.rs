@@ -1,7 +1,10 @@
-mod columns;
+// `columns` and `model` are public for `benchmarks/native.rs` only, hence hidden from the docs.
+#[doc(hidden)]
+pub mod columns;
 mod gurobi;
 mod handles;
-mod model;
+#[doc(hidden)]
+pub mod model;
 
 use pyo3::prelude::*;
 
