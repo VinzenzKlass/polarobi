@@ -5,8 +5,13 @@ site_url = "https://vinzenzklass.github.io/polarobi/"
 repo_url = "https://github.com/VinzenzKlass/polarobi"
 repo_name = "VinzenzKlass/polarobi"
 watch = ["python/polarobi"]
-extra_css = ["css/styles.css"]
-extra_javascript = ["js/highlight.min.js"]
+extra_css = ["css/styles.css", "https://unpkg.com/katex@0/dist/katex.min.css"]
+extra_javascript = [
+    "js/highlight.min.js",
+    "https://unpkg.com/katex@0/dist/katex.min.js",
+    "https://unpkg.com/katex@0/dist/contrib/auto-render.min.js",
+    "js/katex.js",
+]
 
 nav = [
     { "Home" = "index.md" },
@@ -70,6 +75,7 @@ toggle.name = "Switch to light mode"
 admonition = { }
 attr_list = { }
 md_in_html = { }
+pymdownx.arithmatex.generic = true
 pymdownx.details = { }
 pymdownx.highlight.use_pygments = false
 pymdownx.superfences = { }

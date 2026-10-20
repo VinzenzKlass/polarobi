@@ -50,7 +50,7 @@ Matching gurobipy exactly means following some rules that are easy to miss. pola
   sum depends on its order, the last bit of the coefficient can differ; polarobi's order is fixed and the same on
   every platform. The test suite's reference implementation sums repeats left to right as well.
 - **Inputs gurobipy cannot express** have their own rules: a Series of right-hand sides lines up with the rows frame
-  as given, and `by=[]` sums all terms into a single constraint.
+  as given, and `add_constr` (or `by=[]`) sums all terms into a single constraint.
 
 ## How It Is Tested
 

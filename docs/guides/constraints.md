@@ -13,9 +13,11 @@ the whole family with two frames:
 
 Each group of terms with the same key `k` becomes one constraint:
 
-```
-sum(coef * x[var] for the terms of k)  <sense>  rhs[k]
-```
+$$
+\sum_{t \in T_k} \text{coef}_t \, x_{\text{var}_t} \;\lessgtr\; \text{rhs}_k
+$$
+
+where $T_k$ are the terms with key $k$ and $\lessgtr$ is the constraint's sense.
 
 Because both are ordinary frames, you build them with ordinary polars: joins, filters and `concat` take the place
 of tuple lookups and `quicksum` loops.
@@ -24,6 +26,10 @@ of tuple lookups and `quicksum` loops.
 ## Basic Usage
 
 The simplest case groups a variable frame by one of its columns. Here, every order is shipped at most once:
+
+$$
+\sum_{w} x_{o,w} \le 1 \qquad \forall o
+$$
 
 ```python
 x = grb(shipments).add_vars(model, by=["order", "week"], vtype="B", name="ship")
@@ -47,6 +53,12 @@ below. A frame's `coef` column is not used unless you pass it.
 Terms usually come from joining a variable frame with your data. To limit the tooling each product needs per week,
 join the shipments to the products' tooling:
 
+$$
+\sum_{p \,\in\, P_k} \text{hours}_{k,p} \, x_{p,w} \le \text{capacity}_{k,w} \qquad \forall (k, w)
+$$
+
+where $P_k$ are the products that use tooling $k$.
+
 ```python
 terms = x.join(tooling, on="product").select("tooling", "week", "idx", coef=pl.col("hours"))
 grb(terms).add_constrs(
@@ -58,6 +70,12 @@ A constraint that spans several variable families takes a list of term sources w
 Each source is `frame` (coefficient 1, index `idx`), `(frame, coef)` or `(frame, coef, var)`. The capacity of a
 factory, used by both kinds of demand:
 
+$$
+\sum_{d} \text{quantity}_d \, x^{\text{dist}}_{d} + \sum_{s} \text{quantity}_s \, x^{\text{stock}}_{s} \le \text{max\_quantity}_{f,w} \qquad \forall (f, w)
+$$
+
+with $d$ and $s$ ranging over the terms of factory $f$ in week $w$.
+
 ```python
 from polarobi import add_constrs
 
@@ -66,8 +84,15 @@ add_constrs(model, terms, factories, by=["factory", "week"], sense="<=", rhs="ma
 ```
 
 Variables that appear on the right-hand side of a mathematical formulation move to the left with a negated
-coefficient. A minimum order quantity with a binary `y` per group, `sum(q * x) >= moq * y`, becomes
-`sum(q * x) - moq * y >= 0`:
+coefficient. A minimum order quantity with a binary $y_g$ per group,
+
+$$
+\sum_{i \in g} q_i \, x_i \ge \text{moq}_g \, y_g
+\quad\Longrightarrow\quad
+\sum_{i \in g} q_i \, x_i - \text{moq}_g \, y_g \ge 0 \qquad \forall g,
+$$
+
+which in polarobi is:
 
 ```python
 add_constrs(
@@ -90,6 +115,10 @@ is the same as `grb(df).add_constrs(model, ..., coef=c, var=v)`.
 Without a rows frame, there is one constraint per distinct key in the terms, in order of first appearance, and
 `sense`, `rhs` and `name` can only be the same for all of them. Pass a rows frame to vary them per constraint, or to
 control which constraints exist and in which order:
+
+$$
+\sum_{i \in f} \text{quantity}_i \, x_i \le \text{capacity}_f \qquad \forall f \in \text{factories}
+$$
 
 ```python
 factories = pl.DataFrame({"factory": ["f1", "f2"], "capacity": [50.0, 80.0]})
@@ -124,14 +153,20 @@ rows are dropped.
 
 ## A Single Constraint
 
-To sum every term into one constraint, pass `by=[]`. A global limit on air freight, for example:
+`add_constr` sums every term into one constraint and returns a one-row frame with its `idx`. A global limit on air
+freight, for example:
+
+$$
+\sum_{i \,\in\, \text{AIR}} \text{quantity}_i \, x_i \le \text{max\_air}
+$$
 
 ```python
 air = x.filter(pl.col("mode") == "AIR")
-grb(air).add_constrs(model, by=[], sense="<=", rhs=max_air, coef="quantity", name="air_limit")
+grb(air).add_constr(model, sense="<=", rhs=max_air, coef="quantity", name="air_limit")
 ```
 
-With `by=[]` there is no rows frame, and a `name` string becomes the constraint's plain name.
+Like `add_constrs`, the module-level `polarobi.add_constr` also accepts a list of term sources, and `by=[]` in
+`add_constrs` does the same. `name` is the constraint's plain name, without brackets.
 
 
 ## Repeated Variables

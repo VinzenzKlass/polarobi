@@ -95,6 +95,41 @@ def add_vars(
     return keys.with_columns(_index(start, n).alias(idx))
 
 
+def add_constr(
+    model: gp.Model,
+    terms: pl.DataFrame | Sequence[Source],
+    *,
+    sense: Sense,
+    rhs: float = 0.0,
+    name: str | None = None,
+    var: str = "idx",
+    coef: IntoColumn = 1.0,
+    idx: str = "idx",
+) -> pl.DataFrame:
+    """
+    Add a single linear constraint over all terms in `terms`, `sum(coef * x[var]) <sense> rhs`,
+    returning a one-row frame with its row index `idx`.
+
+    Each item in `terms` is `frame`, `(frame, coef)` or `(frame, coef, var)`.
+
+    :param model: The Gurobi model to add the constraint to.
+    :param terms: DataFrame of terms or sequence of term sources
+        (`frame`, `(frame, coef)` or `(frame, coef, var)`).
+    :param sense: Constraint sense: `<` or `<=` (less than or equal), `>` or `>=`
+        (greater than or equal), or `=` or `==` (equal).
+    :param rhs: Right-hand side for the constraint.
+    :param name: Name for the constraint.
+    :param var: Column name for variable indices when `terms` is a single DataFrame.
+    :param coef: Coefficient for each term when `terms` is a single DataFrame.
+    :param idx: Column name for the constraint index.
+    :return: One-row DataFrame with the constraint's index, or an empty DataFrame if `terms` has no
+        rows.
+    """
+    return add_constrs(
+        model, terms, by=(), sense=sense, rhs=float(rhs), name=name, var=var, coef=coef, idx=idx
+    )
+
+
 def add_constrs(
     model: gp.Model,
     terms: pl.DataFrame | Sequence[Source],

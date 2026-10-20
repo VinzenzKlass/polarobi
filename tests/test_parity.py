@@ -19,7 +19,7 @@ from hypothesis import strategies as st
 
 from tests.harness import native, reference
 from tests.harness.compare import assert_identical
-from tests.harness.specs import AddConstrs, AddVar, AddVars, GetAttr
+from tests.harness.specs import AddConstr, AddConstrs, AddVar, AddVars, GetAttr
 from tests.harness.strategies import key_frames
 
 _ENV = gp.Env(params={"OutputFlag": 0, "Threads": 1})
@@ -153,6 +153,28 @@ def test_invalid_add_var_changes_nothing(
         lambda m: native.add_var(m, AddVar(**kwargs)),  # pyright: ignore[reportArgumentType]
         lambda m: reference.add_var(m, AddVar(**kwargs)),  # pyright: ignore[reportArgumentType]
     )
+
+
+@pytest.mark.parametrize(
+    ("spec", "expected"),
+    [
+        (AddConstr(pl.DataFrame({"idx": [0]}), "<=", rhs=float("nan")), gp.GurobiError),
+        (AddConstr(pl.DataFrame({"idx": [7]}), "<="), gp.GurobiError),
+        (AddConstr(pl.DataFrame({"idx": [0]}), "<=", coef=pl.Series([None])), ValueError),
+        (
+            AddConstr(pl.DataFrame({"idx": [0, 1]}), "<=", coef=pl.Series([1.0])),
+            pl.exceptions.ShapeError,
+        ),
+    ],
+    ids=["nan-rhs", "unknown-var", "null-coef", "short-coef"],
+)
+def test_invalid_add_constr_changes_nothing(
+    models: tuple[gp.Model, gp.Model], spec: AddConstr, expected: type[BaseException]
+) -> None:
+    polarobi_model, untouched = models
+    with pytest.raises(expected):
+        native.add_constr(polarobi_model, spec)
+    assert_identical(polarobi_model, untouched)
 
 
 @pytest.mark.parametrize(

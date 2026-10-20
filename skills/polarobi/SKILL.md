@@ -21,7 +21,7 @@ Everything is a frame with an `idx` column:
 - `add_vars` returns the input frame plus `idx`, the Gurobi column index of each row's variable.
 - `add_constrs` is called on a **terms** frame (one row per variable in a constraint: key columns,
   `idx`, coefficient), or `polarobi.add_constrs` on a list of them, and returns the **rows** (one per constraint) plus
-  `idx`, the constraint's row index.
+  `idx`, the constraint's row index. `add_constr` / `polarobi.add_constr` adds a single constraint over all terms.
 - `get` / `set` read and write attributes for every row via `idx`. They also work on any filtered or
   joined frame derived from one.
 
@@ -55,6 +55,10 @@ x = grb(shipments).add_vars(
 - `by`: key columns for names and the duplicate check. Defaults to **all columns**, so pass it
   whenever the frame has data columns. Duplicate keys raise `KeyError` before anything is added.
   `by=[]` means no keys.
+- **`by=` takes any `Sequence[str]`**, not just a list: a tuple, a list or `df.columns` all work
+  (`add_constrs` and `get_*` also accept a single column name). Pass the sequence you already have as is.
+  Never wrap it in `list(...)` or copy it into a new list. `by=("order", "week")` and `by=key_cols` are
+  just as good as `by=["order", "week"]`.
 - `lb`, `ub`, `obj` accept a scalar, a column name, a `pl.Expr`, or a `pl.Series` (one value per row).
   Nulls are rejected. Use `float("inf")` for infinite bounds.
 - `vtype`: one of `"C" "B" "I" "S" "N"` (or `gp.GRB.BINARY` etc.) for the whole family.
@@ -68,13 +72,16 @@ x = grb(shipments).add_vars(
 
 ## Constraints
 
-Each group of terms with the same key becomes `sum(coef * x[var]) <sense> rhs`.
+Each group of terms with the same key `k` becomes one constraint
+`Σ_{terms t with key k} coef_t · x[var_t]  <sense>  rhs_k`.
 
 ```python
 # One constraint per order, coef 1 for each term:
+#   ∀ o:  Σ_w x[o,w] <= 1
 grb(x).add_constrs(model, by="order", sense="<=", rhs=1.0, name="once")
 
 # Per-constraint rhs from a rows frame; coef from a column of the terms:
+#   ∀ f ∈ capacity:  Σ_{t: factory_t = f} quantity_t · x_t <= capacity_f
 grb(x).add_constrs(
     model, capacity, by="factory", sense="<=", rhs="capacity", coef="quantity", name="cap"
 )
@@ -91,13 +98,16 @@ Key points:
 - Rows with no matching terms are dropped (`drop_empty=True`). Terms with no matching row are ignored.
   Repeated keys in rows give one constraint per row.
 - `sense`: `"<" "<=" ">" ">=" "=" "=="`, or a `pl.Expr` / Series of those for mixed senses.
-- `by=[]` sums all terms into **one** constraint (no rows frame allowed, and `name` is the plain name).
+- `grb(terms).add_constr(model, *, sense, rhs=0.0, name=None, var="idx", coef=1.0, idx="idx")` and
+  `polarobi.add_constr(model, terms, *, sense, ...)` (where `terms` may be a list of sources) sum all terms
+  into **one** constraint (`name` is the plain name; same as `by=[]` in `add_constrs`).
 - A variable repeated within one constraint has its coefficients summed.
 
 Common shapes:
 
 ```python
 # Terms from a join (the "lookup")
+#   ∀ (k, w) ∈ tool_cap:  Σ_{p uses tooling k} hours_{k,p} · x[p,w] <= capacity_{k,w}
 terms = x.join(tooling, on="product").select("tooling", "week", "idx", coef=pl.col("hours"))
 grb(terms).add_constrs(
     model, tool_cap, by=["tooling", "week"], sense="<=", rhs="capacity", coef="coef"
@@ -105,6 +115,7 @@ grb(terms).add_constrs(
 
 # Expression spanning several families: module-level add_constrs takes a list of sources
 # Each source is frame, (frame, coef), or (frame, coef, var)
+#   ∀ f:  Σ_{a} qty_a · x_a[a] + Σ_{b} qty_b · x_b[b] <= 100   (a, b terms of factory f)
 polarobi.add_constrs(model, [(x_a, "qty"), (x_b, "qty")], by="factory", sense="<=", rhs=100.0)
 
 # Variable on the right-hand side moves left with a negated coef: sum(q*x) >= moq*y  ->  sum(q*x) - moq*y >= 0
@@ -113,6 +124,7 @@ polarobi.add_constrs(
 )
 
 # Big-M linking x <= M*y per site: same pattern, y with coef=-M
+#   ∀ s:  x_s - M · y_s <= 0
 ```
 
 `polarobi.add_constrs(model, terms, rows=None, *, by, sense, rhs=0.0, name=None, var="idx", coef=1.0,
@@ -147,7 +159,8 @@ td = grb(x).tupledict(model, ["order", "week"])  # gp.tupledict keyed like addVa
 model.addLConstr(td["o1", "2026-01"] + td["o1", "2026-02"] <= 1)
 
 extra = polarobi.add_var(model, name="extra")
-polarobi.add_constrs(model, [(x, "q"), (extra, -1.0)], by=[], sense="<=", rhs=0.0)
+# one constraint over all terms:  Σ_i q_i · x_i - extra <= 0
+polarobi.add_constr(model, [(x, "q"), (extra, -1.0)], sense="<=", rhs=0.0)
 ```
 
 Removing elements with `model.remove(...)` shifts the indices of later elements after the next update,

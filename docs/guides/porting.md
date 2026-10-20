@@ -101,6 +101,7 @@ depend on a particular name format, pass an expression, such as
 | `gp.LinExpr(coefs, [x[k] for k in keys])` | A terms frame with `idx` and a coefficient column, passed as `coef=` |
 | `quicksum(x[k] for k in keys)` | A terms frame with `idx`; `coef` defaults to 1 |
 | `quicksum(e1 + e2)` across families | `add_constrs(model, [(df1, c1), (df2, c2)], ...)` |
+| One `model.addLConstr(quicksum(...) <= b)` | `grb(terms).add_constr(model, sense="<=", rhs=b)` |
 | `expr <= big_m * y` | `y`'s terms with `coef=-big_m`, `rhs=0` |
 | `if not exprs: continue` | Default `drop_empty=True`, or a filtered rows frame |
 | `for row in df.iter_rows(): model.addLConstr(...)` | `grb(terms).add_constrs(model, df, by=keys, ...)` |

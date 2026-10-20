@@ -48,13 +48,12 @@ Everything gurobipy offers works on elements polarobi added, and polarobi works 
   use [`add_var`](variables.md#single-variables)):
 
 ```python
-from polarobi import add_constrs, add_var
+from polarobi import add_constr, add_var
 
 air = add_var(model, ub=budget, name="air_expansion")
-add_constrs(
+add_constr(
     model,
     [(x.filter(pl.col("mode") == "AIR"), "quantity"), (air, -1.0)],
-    by=[],
     sense="<=",
     rhs=max_air,
     name="air_limit",

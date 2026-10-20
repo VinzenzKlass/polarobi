@@ -18,7 +18,16 @@ from typing import Any
 import polars as pl
 from hypothesis import strategies as st
 
-from tests.harness.specs import AddConstrs, AddVar, AddVars, GetAttr, IntoColumn, Kind, SetAttr
+from tests.harness.specs import (
+    AddConstr,
+    AddConstrs,
+    AddVar,
+    AddVars,
+    GetAttr,
+    IntoColumn,
+    Kind,
+    SetAttr,
+)
 
 _SENSES = ("<", "<=", ">", ">=", "=", "==")
 _VTYPES = (None, "C", "B", "I", "S", "N")
@@ -129,6 +138,24 @@ def add_vars_specs(draw: st.DrawFn) -> AddVars:
         vtype=draw(st.sampled_from(_VTYPES)),
         name=draw(_names(key_columns)),
         idx=draw(st.sampled_from(["idx", "col"])),
+    )
+
+
+@st.composite
+def add_constr_specs(draw: st.DrawFn, num_vars: int) -> AddConstr:
+    rows_ = draw(st.lists(st.integers(0, num_vars - 1), max_size=20))
+    var = draw(st.sampled_from(["idx", "v"]))
+    terms = pl.DataFrame({var: rows_}, schema={var: draw(st.sampled_from(_INDEX_DTYPES))})
+    terms, coef_ = draw(into_columns(terms, "coef", _FINITE))
+    coef: IntoColumn = 1.0 if coef_ is None else coef_
+    return AddConstr(
+        terms=draw(layouts(terms)),
+        sense=draw(st.sampled_from(_SENSES)),
+        rhs=draw(_FINITE),
+        name=draw(st.none() | st.from_regex(r"[a-z]{1,6}", fullmatch=True)),
+        var=var,
+        coef=coef,
+        idx=draw(st.sampled_from(["idx", "row"])),
     )
 
 

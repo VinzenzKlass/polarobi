@@ -64,6 +64,14 @@ class Equivalence(RuleBasedStateMachine):
 
     @precondition(lambda self: 0 < self.count("var") and self.count("constr") < _MAX_ELEMENTS)
     @rule(data=st.data())
+    def add_constr(self, data: st.DataObject) -> None:
+        spec = data.draw(strategies.add_constr_specs(self.count("var")))
+        want = reference.add_constr(self.reference, spec)
+        got = native.add_constr(self.native, spec)
+        assert_frame_equal(got, want)
+
+    @precondition(lambda self: 0 < self.count("var") and self.count("constr") < _MAX_ELEMENTS)
+    @rule(data=st.data())
     def add_constrs(self, data: st.DataObject) -> None:
         spec = data.draw(strategies.add_constrs_specs(self.count("var")))
         want = reference.add_constrs(self.reference, spec)

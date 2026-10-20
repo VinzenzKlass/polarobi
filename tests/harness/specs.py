@@ -39,6 +39,17 @@ class AddVars:
 
 
 @dataclass(frozen=True, slots=True)
+class AddConstr:
+    terms: pl.DataFrame
+    sense: Sense
+    rhs: float = 0.0
+    name: str | None = None
+    var: str = "idx"
+    coef: IntoColumn = 1.0
+    idx: str = "idx"
+
+
+@dataclass(frozen=True, slots=True)
 class AddConstrs:
     terms: pl.DataFrame
     by: tuple[str, ...]
