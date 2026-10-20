@@ -2,10 +2,13 @@ name: Benchmarks
 # Instruction and allocation counts of the pure Rust stages, see benches/native.rs. Measured
 # under Valgrind, so the numbers do not depend on the runner's load. A pull request is compared
 # against its base commit on the same runner; the comparison is written to the job summary and
-# never fails the build.
+# to one comment on the pull request, updated on every push, and never fails the build.
 on:
   pull_request:
   workflow_dispatch:
+permissions:
+  contents: read
+  pull-requests: write
 jobs:
   Rust:
     # 24.04 ships Valgrind 3.22; Rust symbols need 3.19 or later to be demangled, or the
@@ -40,25 +43,67 @@ jobs:
             git checkout --quiet ${{ github.sha }}
             echo "saved=true" >> "$GITHUB_OUTPUT"
           else
-            echo "The base commit has no benchmark, so this run is not compared." | tee bench.txt
+            echo "The base commit has no benchmark, so this run is not compared."
           fi
       - name: Measure this commit
+        # JSON on stdout, one line per benchmark; the usual report goes to stderr for the log.
         run: |
           if [ "${{ steps.base.outputs.saved }}" = true ]; then
-            cargo bench --bench native --locked -- --baseline=base 2>&1 | tee -a bench.txt
+            cargo bench --bench native --locked -- --output-format=json --baseline=base > bench.json
           else
-            cargo bench --bench native --locked 2>&1 | tee -a bench.txt
+            cargo bench --bench native --locked -- --output-format=json > bench.json
           fi
-      - name: Summarize
+      - name: Summarize and comment
         if: always()
-        run: |
-          {
-            echo '## Rust stage benchmarks'
-            echo
-            echo 'Instructions and allocations of the pure Rust stages under Valgrind, `benches/native.rs`.'
-            echo 'Changes are against the pull request base commit.'
-            echo
-            echo '```'
-            sed 's/\x1b\[[0-9;]*m//g' bench.txt 2>/dev/null || echo 'No output: the benchmark did not run.'
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+        # Each JSON line carries a benchmark's metrics, against the baseline when the run had one.
+        # The table goes to the job summary and to one comment on the pull request, updated on
+        # every push.
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            const compared = '${{ steps.base.outputs.saved }}' === 'true';
+            const columns = [['Callgrind', 'Ir', 'Instructions'], ['Dhat', 'TotalBytes', 'Allocated bytes']];
+            const number = (v) => Object.values(v)[0];
+            const percent = (x) => x.toLocaleString('en-US', { signDisplay: 'always', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            const cell = (metric) => {
+              if (!metric) return '';
+              const m = metric.metrics;
+              const [now, old] = 'Both' in m ? m.Both.map(number) : [number(Object.values(m)[0]), null];
+              const text = now.toLocaleString('en-US');
+              if (old === null) return text;
+              if (old === now) return `${text} (no change)`;
+              if (old === 0) return `${text} (new)`;
+              return `${text} (${percent(((now - old) / old) * 100)}%)`;
+            };
+            const lines = fs.existsSync('bench.json') ? fs.readFileSync('bench.json', 'utf8').split(/\r?\n/).filter(Boolean) : [];
+            const rows = lines.map((line) => {
+              const bench = JSON.parse(line);
+              const summaries = Object.assign({}, ...bench.profiles.map((p) => p.summaries.total.summary));
+              const cells = columns.map(([tool, metric]) => cell(summaries[tool]?.[metric]));
+              return `| \`${bench.function_name}\` ${bench.id} | ${cells.join(' | ')} |`;
+            });
+            const header = [`| Benchmark | ${columns.map((c) => c[2]).join(' | ')} |`, `|---|${'---:|'.repeat(columns.length)}`];
+            const table = rows.length ? [...header, ...rows] : ['The benchmark produced no output.'];
+            const body = [
+              '## Rust stage benchmarks',
+              '',
+              'Instructions and allocated bytes of the pure Rust stages under Valgrind, `benches/native.rs`.',
+              compared ? 'Changes are against the pull request base commit.' : 'Not compared: the base commit has no benchmark.',
+              '',
+              ...table,
+              '',
+            ].join('\n');
+            await core.summary.addRaw(body).write();
+            if (context.eventName !== 'pull_request') return;
+            const marker = '<!-- benchmarks/native -->';
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number });
+            const previous = comments.find((c) => c.body?.startsWith(marker));
+            const comment = `${marker}\n${body}`;
+            if (previous) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: previous.id, body: comment });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body: comment });
+            }
