@@ -27,6 +27,11 @@ iai-callgrind = "0.16.1"
 name = "native"
 harness = false
 
+[[bench]]
+# Wall-clock timings of the same stages, see benches/timing.rs. Runs anywhere.
+name = "timing"
+harness = false
+
 [target."cfg(unix)".dependencies]
 libc = "0.2.190"
 

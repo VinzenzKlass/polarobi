@@ -16,54 +16,20 @@
 //! <same as Cargo.toml>`.
 //! Linux only: the CI job in `.github/workflows/bench.yml` runs it against the base branch.
 
+#[path = "inputs.rs"]
+mod inputs;
+
 use std::ffi::c_int;
 use std::hint::black_box;
-use std::sync::Arc;
 
 use _native::columns::{cstrings_of, f64s_of, indices_of};
 use _native::model::{merge_repeats, validate};
-use arrow_array::{Array, ArrayRef, Float64Array, Int32Array, StringArray, StringViewArray};
+use arrow_array::ArrayRef;
 use arrow_schema::DataType;
 use iai_callgrind::{
     Dhat, LibraryBenchmarkConfig, library_benchmark, library_benchmark_group, main,
 };
-
-const NNZ: usize = 1_000_000;
-const TERMS_PER_ROW: usize = 4;
-const WIDTH: usize = 1_000_000;
-
-/// A fixed-seed generator, the same as the unit tests use, so inputs are identical on every run.
-struct Lcg(u64);
-
-impl Lcg {
-    fn new() -> Self {
-        Self(0x9e37_79b9_7f4a_7c15)
-    }
-
-    fn next(&mut self, bound: usize) -> usize {
-        self.0 = self
-            .0
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(1442695040888963407);
-        ((self.0 >> 33) % bound as u64) as usize
-    }
-}
-
-/// CSR rows of `TERMS_PER_ROW` terms against `WIDTH` columns. With `repeat_every` set, every
-/// such row repeats its first variable in its second term, from `first_row` on.
-fn csr(repeat_every: Option<usize>, first_row: usize) -> (Vec<usize>, Vec<c_int>, Vec<f64>) {
-    let rows = NNZ / TERMS_PER_ROW;
-    let mut rng = Lcg::new();
-    let cbeg: Vec<usize> = (0..rows).map(|r| r * TERMS_PER_ROW).collect();
-    let mut cind: Vec<c_int> = (0..NNZ).map(|_| rng.next(WIDTH) as c_int).collect();
-    if let Some(every) = repeat_every {
-        for row in (first_row..rows).step_by(every) {
-            cind[row * TERMS_PER_ROW + 1] = cind[row * TERMS_PER_ROW];
-        }
-    }
-    let cval: Vec<f64> = (0..NNZ).map(|_| rng.next(1000) as f64 / 10.0).collect();
-    (cbeg, cind, cval)
-}
+use inputs::{NNZ, TERMS_PER_ROW, WIDTH, csr, f64s, indices, names};
 
 #[library_benchmark]
 #[bench::no_repeats(csr(None, 0))]
@@ -79,56 +45,12 @@ fn bench_validate((cbeg, cind, _): (Vec<usize>, Vec<c_int>, Vec<f64>)) {
     black_box(validate(&cbeg, &cind, WIDTH).unwrap());
 }
 
-/// `NNZ` names like `x[O123,F45,W6]`, as one contiguous `Utf8` chunk or one `Utf8View` chunk.
-fn names(view: bool) -> Vec<ArrayRef> {
-    let mut rng = Lcg::new();
-    let texts = (0..NNZ).map(|_| {
-        format!(
-            "x[O{},F{},W{}]",
-            rng.next(250_000),
-            rng.next(50),
-            rng.next(52)
-        )
-    });
-    if view {
-        vec![Arc::new(StringViewArray::from_iter_values(texts))]
-    } else {
-        vec![Arc::new(StringArray::from_iter_values(texts))]
-    }
-}
-
 #[library_benchmark]
 #[bench::utf8(names(false))]
 #[bench::utf8view(names(true))]
 fn bench_cstrings(chunks: Vec<ArrayRef>) {
     let strings = cstrings_of("names", &chunks, Some(NNZ)).unwrap();
     black_box(strings.ptrs());
-}
-
-/// `NNZ` indices in `chunks` equal pieces.
-fn indices(chunks: usize) -> Vec<ArrayRef> {
-    let mut rng = Lcg::new();
-    let all: ArrayRef = Arc::new(Int32Array::from_iter_values(
-        (0..NNZ).map(|_| rng.next(WIDTH) as c_int),
-    ));
-    split(all, chunks)
-}
-
-/// `NNZ` coefficients in `chunks` equal pieces.
-fn f64s(chunks: usize) -> Vec<ArrayRef> {
-    let mut rng = Lcg::new();
-    let all: ArrayRef = Arc::new(Float64Array::from_iter_values(
-        (0..NNZ).map(|_| rng.next(1000) as f64 / 10.0),
-    ));
-    split(all, chunks)
-}
-
-fn split(all: ArrayRef, chunks: usize) -> Vec<ArrayRef> {
-    let each = all.len().div_ceil(chunks);
-    (0..all.len())
-        .step_by(each)
-        .map(|start| all.slice(start, each.min(all.len() - start)))
-        .collect()
 }
 
 #[library_benchmark]
