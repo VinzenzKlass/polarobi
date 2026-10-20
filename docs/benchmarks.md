@@ -149,7 +149,7 @@ between core types, and identical builds differ by a factor of two.
 
 The build time above is dominated by Gurobi's own calls and by gurobipy's handle objects. The Rust stages in between,
 reading the columns, validating the rows and merging repeated variables, are measured separately under Valgrind by
-`benchmarks/native.rs`: instruction counts with callgrind and allocated bytes with DHAT, on inputs the size of a
+`benches/native.rs`: instruction counts with callgrind and allocated bytes with DHAT, on inputs the size of a
 million-term model. Those counts are reproducible on any machine, so every pull request compares them against its
 base commit in the `Benchmarks` workflow and reports the differences in the job summary. Nothing fails on a change,
 the numbers are there to read.

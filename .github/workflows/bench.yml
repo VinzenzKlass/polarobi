@@ -1,5 +1,5 @@
 name: Benchmarks
-# Instruction and allocation counts of the pure Rust stages, see benchmarks/native.rs. Measured
+# Instruction and allocation counts of the pure Rust stages, see benches/native.rs. Measured
 # under Valgrind, so the numbers do not depend on the runner's load. A pull request is compared
 # against its base commit on the same runner; the comparison is written to the job summary and
 # never fails the build.
@@ -29,17 +29,25 @@ jobs:
           version=$(cargo metadata --format-version 1 --locked | python3 -c "import json,sys; print(next(p['version'] for p in json.load(sys.stdin)['packages'] if p['name'] == 'iai-callgrind'))")
           cargo install iai-callgrind-runner --version "$version" --locked
       - name: Measure the base commit
+        id: base
         if: github.event_name == 'pull_request'
+        # A base from before the benchmark was added has nothing to compare against.
         run: |
-          git checkout --quiet ${{ github.event.pull_request.base.sha }}
-          cargo bench --bench native --locked -- --save-baseline=base
-          git checkout --quiet ${{ github.sha }}
+          base=${{ github.event.pull_request.base.sha }}
+          if git cat-file -e "$base:benches/native.rs" 2>/dev/null; then
+            git checkout --quiet "$base"
+            cargo bench --bench native --locked -- --save-baseline=base
+            git checkout --quiet ${{ github.sha }}
+            echo "saved=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "The base commit has no benchmark, so this run is not compared." | tee bench.txt
+          fi
       - name: Measure this commit
         run: |
-          if [ "${{ github.event_name }}" = pull_request ]; then
-            cargo bench --bench native --locked -- --baseline=base 2>&1 | tee bench.txt
+          if [ "${{ steps.base.outputs.saved }}" = true ]; then
+            cargo bench --bench native --locked -- --baseline=base 2>&1 | tee -a bench.txt
           else
-            cargo bench --bench native --locked 2>&1 | tee bench.txt
+            cargo bench --bench native --locked 2>&1 | tee -a bench.txt
           fi
       - name: Summarize
         if: always()
@@ -47,10 +55,10 @@ jobs:
           {
             echo '## Rust stage benchmarks'
             echo
-            echo 'Instructions and allocations of the pure Rust stages under Valgrind, `benchmarks/native.rs`.'
+            echo 'Instructions and allocations of the pure Rust stages under Valgrind, `benches/native.rs`.'
             echo 'Changes are against the pull request base commit.'
             echo
             echo '```'
-            sed 's/\x1b\[[0-9;]*m//g' bench.txt
+            sed 's/\x1b\[[0-9;]*m//g' bench.txt 2>/dev/null || echo 'No output: the benchmark did not run.'
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"

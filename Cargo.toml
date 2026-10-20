@@ -6,7 +6,7 @@ description = "Add Gurobi variables and constraints straight from Arrow/polars m
 
 [lib]
 name = "_native"
-# `rlib` too, so that `benchmarks/native.rs` can call the pure Rust stages directly.
+# `rlib` too, so that `benches/native.rs` can call the pure Rust stages directly.
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
@@ -20,13 +20,11 @@ pyo3 = { version = "0.29.3", features = ["abi3-py312"] }
 pyo3-arrow = { version = "0.19", default-features = false }
 
 [dev-dependencies]
-# Instruction and allocation counts under Valgrind, see benchmarks/native.rs. Linux only.
+# Instruction and allocation counts under Valgrind, see benches/native.rs. Linux only.
 iai-callgrind = "0.16.1"
 
 [[bench]]
-# Next to the Python benchmark rather than in Cargo's default `benches/`.
 name = "native"
-path = "benchmarks/native.rs"
 harness = false
 
 [target."cfg(unix)".dependencies]
