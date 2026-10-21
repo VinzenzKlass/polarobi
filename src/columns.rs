@@ -33,7 +33,7 @@ fn checked<'a>(name: &str, chunks: &'a [ArrayRef], len: Option<usize>) -> PyResu
 /// The values of primitive chunks as `U`, a type with the layout of `T::Native` for which
 /// `convert` is the identity on bits, so that a single chunk is borrowed in place. Several chunks
 /// are concatenated, converting each value.
-fn values<'a, T, U>(chunks: &'a [ArrayRef], convert: impl Fn(T::Native) -> U) -> Cow<'a, [U]>
+fn values<T, U>(chunks: &'_ [ArrayRef], convert: impl Fn(T::Native) -> U) -> Cow<'_, [U]>
 where
     T: ArrowPrimitiveType,
     U: Copy,
@@ -160,28 +160,30 @@ fn chars_of<'a>(
 /// than one per name.
 #[derive(Debug)]
 pub struct CStrings {
+    /// Only read through `ptrs` outside tests, but owns the memory they point into.
+    #[allow(dead_code)]
     bytes: Vec<u8>,
-    starts: Vec<usize>,
+    /// A pointer into `bytes` for each name. `bytes` never reallocates after packing, and moving
+    /// `self` leaves its heap buffer in place, so these stay valid for as long as `self` is.
+    ptrs: Vec<*const c_char>,
 }
 
 impl CStrings {
     /// A pointer to each name, in the form the `char **` arguments of the Gurobi API take. The
     /// pointers are valid for as long as `self` is.
-    pub fn ptrs(&self) -> Vec<*const c_char> {
-        self.starts
-            .iter()
-            .map(|&s| self.bytes[s..].as_ptr().cast())
-            .collect()
+    pub fn ptrs(&self) -> &[*const c_char] {
+        &self.ptrs
     }
 
     #[cfg(test)]
     fn len(&self) -> usize {
-        self.starts.len()
+        self.ptrs.len()
     }
 
     #[cfg(test)]
     fn get(&self, i: usize) -> &std::ffi::CStr {
-        std::ffi::CStr::from_bytes_until_nul(&self.bytes[self.starts[i]..]).unwrap()
+        // SAFETY: each pointer is to a NUL-terminated name inside `self.bytes`.
+        unsafe { std::ffi::CStr::from_ptr(self.ptrs[i]) }
     }
 }
 
@@ -194,8 +196,10 @@ pub fn cstrings_of(name: &str, chunks: &[ArrayRef], len: Option<usize>) -> PyRes
     let rows: usize = chunks.iter().map(|c| c.len()).sum();
     // Exactly the bytes of the names plus a terminator each. A sliced string-view chunk still
     // points at its parent's data buffers, so buffer sizes would over-reserve.
-    let mut bytes = Vec::with_capacity(chunks.iter().map(text_len).sum::<usize>() + rows);
-    let mut starts = Vec::with_capacity(rows);
+    // The pointers taken below rely on `bytes` never reallocating, so it is reserved at its exact
+    // final size up front.
+    let mut bytes: Vec<u8> = Vec::with_capacity(chunks.iter().map(text_len).sum::<usize>() + rows);
+    let mut ptrs = Vec::with_capacity(rows);
     let mut push = |s: Option<&str>| -> PyResult<()> {
         let s =
             s.ok_or_else(|| PyValueError::new_err(format!("column '{name}' contains nulls")))?;
@@ -204,7 +208,7 @@ pub fn cstrings_of(name: &str, chunks: &[ArrayRef], len: Option<usize>) -> PyRes
                 "column '{name}' contains a NUL byte"
             )));
         }
-        starts.push(bytes.len());
+        ptrs.push(bytes.as_ptr_range().end.cast());
         bytes.extend_from_slice(s.as_bytes());
         bytes.push(0);
         Ok(())
@@ -217,7 +221,12 @@ pub fn cstrings_of(name: &str, chunks: &[ArrayRef], len: Option<usize>) -> PyRes
             dt => return Err(type_error(name, dt, "String")),
         }
     }
-    Ok(CStrings { bytes, starts })
+    debug_assert_eq!(
+        bytes.len(),
+        bytes.capacity(),
+        "names buffer was not reserved exactly"
+    );
+    Ok(CStrings { bytes, ptrs })
 }
 
 /// The total length of the strings in a chunk, counting only the rows the chunk holds. Zero for
@@ -470,6 +479,32 @@ mod tests {
         let want = "x[1]".len() + "\u{fc}".len() + long.len() + 4;
         assert_eq!(got.bytes.len(), want);
         assert_eq!(got.bytes.capacity(), want);
+    }
+
+    #[test]
+    fn name_pointers_survive_a_move() {
+        let chunks = arrays([StringArray::from(vec!["a", "bc", "def"])]);
+        let got = cstrings_of("names", &chunks, Some(3)).unwrap();
+        let before = got.ptrs().to_vec();
+        let moved = Box::new(got);
+        assert_eq!(moved.ptrs(), &before[..]);
+        let strs: Vec<&str> = (0..moved.len())
+            .map(|i| moved.get(i).to_str().unwrap())
+            .collect();
+        assert_eq!(strs, ["a", "bc", "def"]);
+    }
+
+    #[test]
+    fn empty_names_get_their_own_terminators() {
+        let chunks = arrays([StringArray::from(vec!["", "", ""])]);
+        let got = cstrings_of("names", &chunks, Some(3)).unwrap();
+        assert_eq!(got.bytes, [0, 0, 0]);
+        let ptrs = got.ptrs();
+        assert_eq!(ptrs.len(), 3);
+        for (i, &p) in ptrs.iter().enumerate() {
+            assert_eq!(p, got.bytes[i..].as_ptr().cast());
+            assert!(got.get(i).is_empty());
+        }
     }
 
     #[test]

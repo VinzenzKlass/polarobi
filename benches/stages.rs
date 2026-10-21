@@ -123,7 +123,7 @@ fn bench_validate(bencher: Bencher) {
 fn bench_cstrings(bencher: Bencher, case: &str) {
     bencher
         .with_inputs(|| names(case == "utf8view"))
-        .bench_local_refs(|chunks| cstrings_of("names", chunks, Some(NNZ)).unwrap().ptrs());
+        .bench_local_refs(|chunks| cstrings_of("names", chunks, Some(NNZ)).unwrap());
 }
 
 #[divan::bench(args = [1, 8])]
