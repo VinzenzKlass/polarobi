@@ -1,5 +1,7 @@
 # polarobi
 
+[![CodSpeed](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json)](https://app.codspeed.io/VinzenzKlass/polarobi?utm_source=badge)
+
 > [!WARNING]
 > polarobi is unstable and experimental. Its API may change without notice, and it builds on private
 > internals of `gurobipy`. Use it for production models only if you can verify the result, for example by

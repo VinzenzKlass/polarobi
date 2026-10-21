@@ -1,0 +1,46 @@
+name: CodSpeed
+# The pure Rust stages of benches/stages.rs, measured by CodSpeed with three instruments: CPU
+# simulation (instruction-level, unaffected by the runner's load), memory (heap allocations) and
+# wall time. Results go to https://app.codspeed.io/VinzenzKlass/polarobi and to a comment on each
+# pull request. Pushes to master record the baseline that pull requests are compared against.
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+  # Lets CodSpeed trigger backtests to build up initial data.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # OpenID Connect authentication with CodSpeed, no token needed.
+  id-token: write
+
+jobs:
+  benchmarks:
+    name: Run benchmarks (${{ matrix.mode }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [ simulation, memory, walltime ]
+    steps:
+      - uses: actions/checkout@v6
+      # pyo3 looks for a Python interpreter to build against, as in the other workflows.
+      - uses: actions/setup-python@v6
+        with:
+          python-version: 3.14
+      - name: Setup Rust toolchain, cache and cargo-codspeed
+        uses: moonrepo/setup-rust@v1
+        with:
+          channel: stable
+          cache-target: release
+          bins: cargo-codspeed
+      - name: Build the benchmarks
+        run: cargo codspeed build -m ${{ matrix.mode }} --bench stages --locked
+      - name: Run the benchmarks
+        uses: CodSpeedHQ/action@v5
+        with:
+          mode: ${{ matrix.mode }}
+          run: cargo codspeed run --bench stages

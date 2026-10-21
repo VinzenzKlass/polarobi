@@ -20,6 +20,8 @@ pyo3 = { version = "0.29.3", features = ["abi3-py312"] }
 pyo3-arrow = { version = "0.19", default-features = false }
 
 [dev-dependencies]
+# The same stages under divan, measured by CodSpeed in CI, see benches/stages.rs.
+divan = { version = "5.0.3", package = "codspeed-divan-compat" }
 # Instruction and allocation counts under Valgrind, see benches/native.rs. Linux only.
 iai-callgrind = "0.16.1"
 
@@ -30,6 +32,12 @@ harness = false
 [[bench]]
 # Wall-clock timings of the same stages, see benches/timing.rs. Runs anywhere.
 name = "timing"
+harness = false
+
+[[bench]]
+# The same stages again, for CodSpeed: CPU simulation, memory and wall time, see
+# benches/stages.rs and .github/workflows/codspeed.yml.
+name = "stages"
 harness = false
 
 [target."cfg(unix)".dependencies]
