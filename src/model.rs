@@ -222,19 +222,27 @@ pub fn merge_repeats(cbeg: &[usize], cind: &[c_int], cval: &[f64], width: usize)
     // `seen[v]` is the last row that used column `v`, offset by one so zero means none. The
     // table is as wide as the model, so it is kept to four bytes per column.
     let mut seen = vec![0u32; width];
-    let repeats = rows().enumerate().any(|(row, (start, end))| {
+    let first = rows().enumerate().position(|(row, (start, end))| {
         let row = row as u32 + 1;
         cind[start..end]
             .iter()
             .any(|&v| std::mem::replace(&mut seen[v as usize], row) == row)
-    });
-    if !repeats {
-        return None;
+    })?;
+    // The rows before `first` have nothing to merge and are copied as they are. The table is
+    // still valid for the rows after `first`, which the merge has not seen yet; only the entries
+    // written for `first` itself are stale, since detection stopped partway through it.
+    let (first_start, first_end) = rows().nth(first).unwrap();
+    for &v in &cind[first_start..first_end] {
+        seen[v as usize] = 0;
     }
-    seen.fill(0);
     let mut slot = vec![0usize; width];
-    let (mut beg, mut ind, mut val) = (Vec::with_capacity(cbeg.len()), Vec::new(), Vec::new());
-    for (row, (start, end)) in rows().enumerate() {
+    let mut beg = Vec::with_capacity(cbeg.len());
+    beg.extend_from_slice(&cbeg[..first]);
+    let mut ind = Vec::with_capacity(cind.len());
+    ind.extend_from_slice(&cind[..first_start]);
+    let mut val = Vec::with_capacity(cval.len());
+    val.extend_from_slice(&cval[..first_start]);
+    for (row, (start, end)) in rows().enumerate().skip(first) {
         let row = row as u32 + 1;
         beg.push(ind.len());
         for (&v, &coef) in cind[start..end].iter().zip(&cval[start..end]) {
@@ -468,6 +476,32 @@ mod tests {
     fn merge_keeps_empty_rows() {
         let merged = merge_repeats(&[0, 0, 2, 2], &[3, 3, 1], &[1.0, 2.0, 5.0], 4);
         assert_eq!(merged, Some((vec![0, 0, 1, 1], vec![3, 1], vec![3.0, 5.0])));
+    }
+
+    #[test]
+    fn merge_starts_at_first_repeating_row() {
+        // Repeat in the first row.
+        let merged = merge_repeats(&[0, 2], &[1, 1, 0, 2], &[1.0, 2.0, 3.0, 4.0], 3);
+        assert_eq!(
+            merged,
+            Some((vec![0, 1], vec![1, 0, 2], vec![3.0, 3.0, 4.0]))
+        );
+        // Repeat in the last row; earlier rows are copied unchanged.
+        let merged = merge_repeats(&[0, 2, 3], &[0, 1, 2, 1, 1], &[1.0, 2.0, 3.0, 4.0, 5.0], 3);
+        assert_eq!(
+            merged,
+            Some((vec![0, 2, 3], vec![0, 1, 2, 1], vec![1.0, 2.0, 3.0, 9.0]))
+        );
+        // Repeat in a row that follows empty rows.
+        let merged = merge_repeats(&[0, 1, 1, 1], &[2, 0, 0], &[1.0, 2.0, 3.0], 3);
+        assert_eq!(merged, Some((vec![0, 1, 1, 1], vec![2, 0], vec![1.0, 5.0])));
+        // A variable seen in an earlier row repeats inside the first repeating row: a table
+        // reset that misses or over-reaches would merge it wrongly.
+        let merged = merge_repeats(&[0, 2], &[0, 1, 0, 2, 0], &[1.0, 2.0, 3.0, 4.0, 5.0], 3);
+        assert_eq!(
+            merged,
+            Some((vec![0, 2], vec![0, 1, 0, 2], vec![1.0, 2.0, 8.0, 4.0]))
+        );
     }
 
     #[test]
