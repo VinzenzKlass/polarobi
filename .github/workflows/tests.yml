@@ -2,6 +2,8 @@ name: QA
 on: [ push, pull_request ]
 jobs:
   Tests:
+    # Forks send no push event here, so their pull requests are the only run they get.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-22.04
     timeout-minutes: 30
     env:

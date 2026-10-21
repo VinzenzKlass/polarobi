@@ -182,18 +182,15 @@ uv run --group bench python benchmarks/plot.py benchmarks/results/results.json
 `--cpus` pins the run to one thread per performance core; on hybrid CPUs the operating system otherwise moves it
 between core types. 10M rows need well over 11 GB of free memory.
 
-`benches/native.rs` counts the instructions and allocated bytes of the pure Rust stages under Valgrind, on inputs the
-size of a million-term model. The `Benchmarks` workflow compares every pull request against its base commit and
-writes the differences to the job summary and a pull request comment, without failing on them. `benches/timing.rs`
-times the same stages with a wall clock; the workflow runs the base and head builds alternately and compares their
-minima. On Linux, with Valgrind 3.19 or later installed:
+Changes to polarobi itself are measured by [CodSpeed](https://codspeed.io), on every pull request and on master:
+`benches/stages.rs` covers the pure Rust stages, and `benchmarks/test_api.py` has one benchmark per call of the Python
+API. The `Benchmarks` workflow runs both under CPU simulation, which reports instruction, cache and memory-access
+costs that don't depend on the runner's load, and under memory profiling, which reports peak memory, bytes allocated
+and allocations. CodSpeed comments the changes on the pull request. Locally, both run timed:
 
 ```shell
-cargo install iai-callgrind-runner --version 0.16.1
-cargo bench --bench native -- --save-baseline=base   # before a change
-cargo bench --bench native -- --baseline=base        # after it
-cargo bench --bench timing                           # anywhere, no Valgrind needed
-uv run --group bench python benchmarks/ab.py         # every Python API call, end to end
+cargo bench --bench stages
+uv run --group dev --group codspeed pytest benchmarks/ --codspeed
 ```
 
 ### Documentation
