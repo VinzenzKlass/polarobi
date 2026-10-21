@@ -21,8 +21,8 @@ jobs:
       # Python for both: the Rust benches link against it through pyo3.
       - uses: actions/setup-python@v6
         with:
-          python-version: 3.14
-      - uses: dtolnay/rust-toolchain@stable
+          python-version: 3.14.8
+      - uses: dtolnay/rust-toolchain@1.99.1
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.suite }}-${{ matrix.mode }}
@@ -40,6 +40,7 @@ jobs:
         if: matrix.suite == 'python'
         env:
           CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
+          UV_PYTHON: "3.14.8"
         run: uv sync --group dev --group codspeed --locked
       - name: Run Benchmarks
         uses: CodSpeedHQ/action@v5
