@@ -30,10 +30,9 @@ fn checked<'a>(name: &str, chunks: &'a [ArrayRef], len: Option<usize>) -> PyResu
     Ok(chunks)
 }
 
-/// The values of primitive chunks as `U`, a type with the layout of `T::Native` for which
-/// `convert` is the identity on bits, so that a single chunk is borrowed in place. Several chunks
-/// are concatenated, converting each value.
-fn values<'a, T, U>(chunks: &'a [ArrayRef], convert: impl Fn(T::Native) -> U) -> Cow<'a, [U]>
+/// The values of primitive chunks as `U`, a type with the layout of `T::Native` for which every
+/// bit pattern is valid. A single chunk is borrowed in place; several are concatenated.
+fn values<'a, T, U>(chunks: &'a [ArrayRef]) -> Cow<'a, [U]>
 where
     T: ArrowPrimitiveType,
     U: Copy,
@@ -42,23 +41,18 @@ where
         assert!(size_of::<T::Native>() == size_of::<U>());
         assert!(align_of::<T::Native>() == align_of::<U>());
     }
+    let cast = |chunk: &'a ArrayRef| -> &'a [U] {
+        let v = chunk.as_primitive::<T>().values();
+        // SAFETY: `U` has the layout of `T::Native`, and the callers pair plain numbers for
+        // which every bit pattern is valid (`u32`/`i32`, `u8`/`i8`, `f64`/`f64`).
+        unsafe { std::slice::from_raw_parts(v.as_ptr().cast(), v.len()) }
+    };
     match chunks {
-        [one] => {
-            let v = one.as_primitive::<T>().values();
-            // SAFETY: `U` has the layout of `T::Native`, and the callers pair plain numbers for
-            // which every bit pattern is valid (`u32`/`i32`, `u8`/`i8`, `f64`/`f64`).
-            Cow::Borrowed(unsafe { std::slice::from_raw_parts(v.as_ptr().cast(), v.len()) })
-        }
+        [one] => Cow::Borrowed(cast(one)),
         _ => {
             let mut out = Vec::with_capacity(chunks.iter().map(|c| c.len()).sum());
             for chunk in chunks {
-                out.extend(
-                    chunk
-                        .as_primitive::<T>()
-                        .values()
-                        .iter()
-                        .map(|&x| convert(x)),
-                );
+                out.extend_from_slice(cast(chunk));
             }
             Cow::Owned(out)
         }
@@ -91,7 +85,7 @@ pub fn f64s_of<'a>(
 ) -> PyResult<Cow<'a, [f64]>> {
     let chunks = checked(name, chunks, len)?;
     match dtype {
-        DataType::Float64 => Ok(values::<Float64Type, f64>(chunks, |x| x)),
+        DataType::Float64 => Ok(values::<Float64Type, f64>(chunks)),
         dt => Err(type_error(name, dt, "Float64")),
     }
 }
@@ -114,7 +108,7 @@ pub fn indices_of<'a>(
 ) -> PyResult<Cow<'a, [c_int]>> {
     let chunks = checked(name, chunks, len)?;
     match dtype {
-        DataType::Int32 => Ok(values::<Int32Type, c_int>(chunks, |x| x)),
+        DataType::Int32 => Ok(values::<Int32Type, c_int>(chunks)),
         DataType::UInt32 => {
             let fits = |c: &ArrayRef| {
                 c.as_primitive::<UInt32Type>()
@@ -127,7 +121,7 @@ pub fn indices_of<'a>(
                     "column '{name}' exceeds the Gurobi index range"
                 )));
             }
-            Ok(values::<UInt32Type, c_int>(chunks, |x| x as c_int))
+            Ok(values::<UInt32Type, c_int>(chunks))
         }
         dt => Err(type_error(name, dt, "Int32 or UInt32")),
     }
@@ -150,7 +144,7 @@ fn chars_of<'a>(
 ) -> PyResult<Cow<'a, [c_char]>> {
     let chunks = checked(name, chunks, len)?;
     match dtype {
-        DataType::UInt8 => Ok(values::<UInt8Type, c_char>(chunks, |x| x as c_char)),
+        DataType::UInt8 => Ok(values::<UInt8Type, c_char>(chunks)),
         dt => Err(type_error(name, dt, "UInt8")),
     }
 }
@@ -402,6 +396,60 @@ mod tests {
             f64s_of("f", &DataType::Float64, &[], Some(0))
                 .unwrap()
                 .is_empty()
+        );
+    }
+
+    /// Every value of the parents, split into an empty chunk, sliced chunks with a non-zero
+    /// offset and whole chunks.
+    fn split(parent: impl Array, empty: impl Array + 'static) -> Vec<ArrayRef> {
+        let n = parent.len();
+        assert!(n >= 4);
+        let empty: ArrayRef = Arc::new(empty);
+        vec![
+            empty.clone(),
+            parent.slice(0, 1),
+            parent.slice(1, 2),
+            empty,
+            parent.slice(3, n - 3),
+        ]
+    }
+
+    #[test]
+    fn several_chunks_match_one() {
+        let parent = UInt32Array::from(vec![7, 0, c_int::MAX as u32, 1, c_int::MAX as u32]);
+        let empty = UInt32Array::from(Vec::<u32>::new());
+        let one = arrays([parent.clone()]);
+        let many = split(parent, empty);
+        let want = indices_of("i", &DataType::UInt32, &one, Some(5)).unwrap();
+        let got = indices_of("i", &DataType::UInt32, &many, Some(5)).unwrap();
+        assert!(matches!(got, Cow::Owned(_)));
+        assert_eq!(got, want);
+        assert_eq!(&*got, &[7, 0, c_int::MAX, 1, c_int::MAX]);
+
+        let parent = Int32Array::from(vec![-1, 4, c_int::MAX, c_int::MIN, 2]);
+        let one = arrays([parent.clone()]);
+        let many = split(parent, Int32Array::from(Vec::<i32>::new()));
+        let want = indices_of("i", &DataType::Int32, &one, Some(5)).unwrap();
+        assert_eq!(
+            indices_of("i", &DataType::Int32, &many, Some(5)).unwrap(),
+            want
+        );
+
+        let parent = Float64Array::from(vec![-0.0, f64::NAN, 1.5, f64::INFINITY, -2.0]);
+        let one = arrays([parent.clone()]);
+        let many = split(parent, Float64Array::from(Vec::<f64>::new()));
+        let bits = |v: &[f64]| v.iter().map(|x| x.to_bits()).collect::<Vec<_>>();
+        let want = f64s_of("f", &DataType::Float64, &one, Some(5)).unwrap();
+        let got = f64s_of("f", &DataType::Float64, &many, Some(5)).unwrap();
+        assert_eq!(bits(&got), bits(&want));
+
+        let parent = UInt8Array::from(vec![60, 61, 62, 0, 255]);
+        let one = arrays([parent.clone()]);
+        let many = split(parent, UInt8Array::from(Vec::<u8>::new()));
+        let want = chars_of("c", &DataType::UInt8, &one, Some(5)).unwrap();
+        assert_eq!(
+            chars_of("c", &DataType::UInt8, &many, Some(5)).unwrap(),
+            want
         );
     }
 
