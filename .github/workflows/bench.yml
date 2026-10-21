@@ -9,20 +9,20 @@ permissions:
   id-token: write
 jobs:
   Benchmarks:
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.mode == 'walltime' && 'codspeed-macro-arm64-graviton-ubuntu-22-04' || 'ubuntu-24.04' }}
     strategy:
       fail-fast: false
       matrix:
         suite: [ rust, python ]
-        mode: [ simulation, memory ]
+        mode: [ walltime, memory ]
     name: Benchmarks (${{ matrix.suite }}, ${{ matrix.mode }})
     steps:
       - uses: actions/checkout@v6
       # Python for both: the Rust benches link against it through pyo3.
       - uses: actions/setup-python@v6
         with:
-          python-version: 3.14
-      - uses: dtolnay/rust-toolchain@stable
+          python-version: 3.14.8
+      - uses: dtolnay/rust-toolchain@1.99.1
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.suite }}-${{ matrix.mode }}
