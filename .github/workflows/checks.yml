@@ -2,6 +2,8 @@ name: QA
 on: [ push, pull_request ]
 jobs:
   Checks:
+    # Forks send no push event here, so their pull requests are the only run they get.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v6
@@ -15,6 +17,7 @@ jobs:
       - uses: astral-sh/setup-uv@v8.2.0
         with:
           enable-cache: true
+          cache-dependency-glob: uv.lock
       - name: Rust Checks
         run: |
           cargo fmt --all --check

@@ -42,8 +42,6 @@ print(grb(x).get(model, "X").filter(pl.col("X") > 0.5))
 `grb(df)` is the typed form of polars' `df.grb` namespace: both do the same, but type checkers only see the first.
 See [Type Checking](https://vinzenzklass.github.io/polarobi/installation/#type-checking) for why.
 
-
-
 ## How it works
 
 - `Model._cmodel` holds the `GRBmodel*`. The native module binds to the Gurobi library that

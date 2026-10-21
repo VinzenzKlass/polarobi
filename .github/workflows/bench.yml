@@ -32,6 +32,7 @@ jobs:
       - uses: astral-sh/setup-uv@v8.2.0
         with:
           enable-cache: true
+
       - name: Install Valgrind and the iai-callgrind runner
         # The runner's version must match the iai-callgrind crate in Cargo.lock.
         run: |
@@ -146,11 +147,36 @@ jobs:
             const stages = rows.length ? [...header, ...rows] : ['The stage benchmarks produced no output.'];
             const ab = read('ab.json');
             const phases = ab.length ? Object.keys(ab[0]).filter((k) => !['build', 'rows', 'package'].includes(k)) : [];
+            // How far a phase's timing can be trusted, by how long it runs, from a calibration run
+            // of identical builds: longer phases varied by under 1%, phases of tens of
+            // milliseconds by up to 5%, and the shortest by more than their own changes could be.
+            const levels = [
+              { from: 0.1, label: 'Reliable', threshold: 2 },
+              { from: 0.01, label: 'Indicative', threshold: 10 },
+              { from: 0, label: 'Too short to compare', threshold: null },
+            ];
+            const phaseRow = (field) => {
+              const t = stats(ab, () => field, field, field)[field];
+              if (t?.head === undefined) return `| \`${field}\` | | |`;
+              const level = levels.find((l) => t.head.min >= l.from);
+              const seconds = (s) => `${fixed(s, 3)} s`;
+              let time = seconds(t.head.min);
+              if (t.base !== undefined && level.threshold !== null) {
+                const pct = ((t.head.min - t.base.min) / t.base.min) * 100;
+                // Changes beyond the noise of their level are bold, so they stand out.
+                const text = `${percent(pct)}%`;
+                time += ` (${Math.abs(pct) > level.threshold ? `**${text}**` : text})`;
+              }
+              const note = level.threshold === null ? level.label : `${level.label}, real above ±${level.threshold}%`;
+              return `| \`${field}\` | ${time}, median ${seconds(median(t.head.mids))} | ${note} |`;
+            };
             const endToEnd = ab.length
               ? [
-                  `| Call, ${ab[0].rows.toLocaleString('en-US')} rows | Time, min of runs (change), median |`,
-                  '|---|---:|',
-                  ...phases.map((field) => `| \`${field}\` | ${versus(stats(ab, () => field, field, field)[field], (s) => `${fixed(s, 3)} s`)} |`),
+                  `| Call, ${ab[0].rows.toLocaleString('en-US')} rows | Time, min of runs (change), median | Signal |`,
+                  '|---|---:|---|',
+                  ...phases.map(phaseRow),
+                  '',
+                  'Changes in bold exceed the noise measured for phases of that length. Phases under 10 ms show no change: their noise is larger than any change worth having.',
                 ]
               : ['The end-to-end benchmark produced no output.'];
             const body = [
