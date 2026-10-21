@@ -227,20 +227,55 @@ pub fn validate(cbeg: &[usize], cind: &[c_int], n_vars: usize) -> Result<usize, 
 /// then drops coefficients that are zero or tiny. Every index in `cind` is in `0..width`, and
 /// there are at most `c_int::MAX` rows.
 pub fn merge_repeats(cbeg: &[usize], cind: &[c_int], cval: &[f64], width: usize) -> Option<Csr> {
-    let rows = || {
-        let ends = cbeg
-            .iter()
-            .skip(1)
-            .copied()
-            .chain(std::iter::once(cind.len()));
-        cbeg.iter().copied().zip(ends)
-    };
+    let rows = || row_bounds(cbeg, cind.len());
     // A few short rows against a wide model, the shape of an incremental build, are scanned in
     // place: a table as wide as the model would cost more to allocate than the rows to merge.
     let longest = rows().map(|(start, end)| end - start).max().unwrap_or(0);
     if longest <= SCAN_ROW_LEN && cind.len() < width / 16 {
         return merge_repeats_by_scan(rows, cind, cval);
     }
+    // Slots are positions in the output, which has at most `cind.len()` terms.
+    if u32::try_from(cind.len()).is_ok() {
+        merge_repeats_by_table::<u32>(cbeg, cind, cval, width)
+    } else {
+        merge_repeats_by_table::<usize>(cbeg, cind, cval, width)
+    }
+}
+
+/// A position in the output of `merge_repeats_by_table`, as narrow as the output allows.
+trait Slot: Copy + Default {
+    /// `at` fits, the caller has checked.
+    fn from_usize(at: usize) -> Self;
+    fn to_usize(self) -> usize;
+}
+
+impl Slot for u32 {
+    fn from_usize(at: usize) -> Self {
+        at as u32
+    }
+    fn to_usize(self) -> usize {
+        self as usize
+    }
+}
+
+impl Slot for usize {
+    fn from_usize(at: usize) -> Self {
+        at
+    }
+    fn to_usize(self) -> usize {
+        self
+    }
+}
+
+/// `merge_repeats` with tables as wide as the model. `S` must hold every position below
+/// `cind.len()`.
+fn merge_repeats_by_table<S: Slot>(
+    cbeg: &[usize],
+    cind: &[c_int],
+    cval: &[f64],
+    width: usize,
+) -> Option<Csr> {
+    let rows = || row_bounds(cbeg, cind.len());
     // `seen[v]` is the last row that used column `v`, offset by one so zero means none. The
     // table is as wide as the model, so it is kept to four bytes per column.
     let mut seen = vec![0u32; width];
@@ -257,7 +292,7 @@ pub fn merge_repeats(cbeg: &[usize], cind: &[c_int], cval: &[f64], width: usize)
     for &v in &cind[first_start..first_end] {
         seen[v as usize] = 0;
     }
-    let mut slot = vec![0usize; width];
+    let mut slot = vec![S::default(); width];
     let mut beg = Vec::with_capacity(cbeg.len());
     beg.extend_from_slice(&cbeg[..first]);
     let mut ind = Vec::with_capacity(cind.len());
@@ -270,16 +305,22 @@ pub fn merge_repeats(cbeg: &[usize], cind: &[c_int], cval: &[f64], width: usize)
         for (&v, &coef) in cind[start..end].iter().zip(&cval[start..end]) {
             let column = v as usize;
             if seen[column] == row {
-                val[slot[column]] += coef;
+                val[slot[column].to_usize()] += coef;
             } else {
                 seen[column] = row;
-                slot[column] = ind.len();
+                slot[column] = S::from_usize(ind.len());
                 ind.push(v);
                 val.push(coef);
             }
         }
     }
     Some((beg, ind, val))
+}
+
+/// The `(start, end)` of each row, for rows starting at `cbeg` in `nnz` terms.
+fn row_bounds(cbeg: &[usize], nnz: usize) -> impl Iterator<Item = (usize, usize)> + '_ {
+    let ends = cbeg.iter().skip(1).copied().chain(std::iter::once(nnz));
+    cbeg.iter().copied().zip(ends)
 }
 
 /// Rows up to this long are checked for repeats by a linear scan of the row itself.
@@ -551,9 +592,15 @@ mod tests {
                 continue; // No rows cannot hold terms.
             }
             let want = reference(&cbeg, &cind, &cval);
+            let unchanged = || (cbeg.clone(), cind.clone(), cval.clone());
             match merge_repeats(&cbeg, &cind, &cval, width) {
                 Some(got) => assert_eq!(got, want, "cbeg {cbeg:?} cind {cind:?}"),
-                None => assert_eq!((cbeg.clone(), cind.clone(), cval.clone()), want),
+                None => assert_eq!(unchanged(), want),
+            }
+            // The `usize` slots of outputs beyond `u32::MAX` terms, too long to build here.
+            match merge_repeats_by_table::<usize>(&cbeg, &cind, &cval, width) {
+                Some(got) => assert_eq!(got, want, "cbeg {cbeg:?} cind {cind:?}"),
+                None => assert_eq!(unchanged(), want),
             }
         }
     }
