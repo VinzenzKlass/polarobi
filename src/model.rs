@@ -38,7 +38,7 @@ fn opt_ptr<T: Clone>(values: &Option<Cow<'_, [T]>>) -> *const T {
 
 /// The `char **` for an optional name column. The shadowed `names` stays alive, so the pointers
 /// are valid for the call that follows.
-fn name_ptrs(names: &Option<columns::CStrings>) -> Option<Vec<*const c_char>> {
+fn name_ptrs(names: &Option<columns::CStrings>) -> Option<&[*const c_char]> {
     names.as_ref().map(columns::CStrings::ptrs)
 }
 
