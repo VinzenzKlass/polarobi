@@ -11,6 +11,8 @@ def add_vars(
     ub: pl.Series | None = None,
     vtype: pl.Series | None = None,
     names: pl.Series | None = None,
+    pool: list[Any] | None = None,
+    cls: type[Any] | None = None,
 ) -> None: ...
 def add_constrs(
     cmodel: Any,
@@ -20,6 +22,8 @@ def add_constrs(
     rhs: pl.Series,
     n_vars: int,
     names: pl.Series | None = None,
+    pool: list[Any] | None = None,
+    cls: type[Any] | None = None,
 ) -> None: ...
 
 class ArrowArray:

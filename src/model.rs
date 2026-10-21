@@ -1,5 +1,6 @@
-//! Bulk calls into a gurobipy-owned `GRBmodel*`. Registering the matching Python handles is left
-//! to the Python layer, which owns gurobipy's bookkeeping.
+//! Bulk calls into a gurobipy-owned `GRBmodel*`. Given gurobipy's handle list and class, each call
+//! also registers the handles of what it adds, created while Gurobi works; the Python layer keeps
+//! the rest of gurobipy's bookkeeping.
 
 use std::borrow::Cow;
 use std::ffi::{CString, c_char, c_int};
@@ -10,11 +11,12 @@ use arrow_array::{ArrayRef, Float64Array, Int32Array};
 use arrow_schema::{Field, FieldRef};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::{PyCapsule, PyTuple};
+use pyo3::types::{PyCapsule, PyList, PyTuple};
 use pyo3_arrow::PyChunkedArray;
 use pyo3_arrow::ffi::to_array_pycapsules;
 
 use crate::gurobi::{GrbModel, api};
+use crate::handles::{GurobiCall, with_handles};
 use crate::{columns, gurobi};
 
 /// The `GRBmodel*` behind gurobipy's `Model._cmodel` capsule.
@@ -43,7 +45,7 @@ fn name_ptrs(names: &Option<columns::CStrings>) -> Option<&[*const c_char]> {
 }
 
 #[pyfunction]
-#[pyo3(signature = (cmodel, n, obj=None, lb=None, ub=None, vtype=None, names=None))]
+#[pyo3(signature = (cmodel, n, obj=None, lb=None, ub=None, vtype=None, names=None, pool=None, cls=None))]
 #[allow(clippy::too_many_arguments)]
 pub fn add_vars(
     cmodel: &Bound<'_, PyAny>,
@@ -53,6 +55,8 @@ pub fn add_vars(
     ub: Option<PyChunkedArray>,
     vtype: Option<PyChunkedArray>,
     names: Option<PyChunkedArray>,
+    pool: Option<&Bound<'_, PyList>>,
+    cls: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<()> {
     let (api, model) = (api()?, model_ptr(cmodel)?);
     let obj = obj
@@ -76,10 +80,11 @@ pub fn add_vars(
         .map(|c| columns::cstrings("names", c, Some(n)))
         .transpose()?;
     let names = name_ptrs(&names);
-    let rc = unsafe {
+    let n_vars = c_int_len("variables", n)?;
+    let call = || unsafe {
         (api.addvars)(
             model,
-            c_int_len("variables", n)?,
+            n_vars,
             0,
             ptr::null(),
             ptr::null(),
@@ -88,9 +93,13 @@ pub fn add_vars(
             opt_ptr(&lb),
             opt_ptr(&ub),
             opt_ptr(&vtype),
-            names.as_ref().map_or(ptr::null(), |v| v.as_ptr()),
+            names.map_or(ptr::null(), <[_]>::as_ptr),
         )
     };
+    // SAFETY: the call reads only `model` and the columns above through raw pointers and borrows;
+    // they outlive it and nothing else touches them until it returns. It touches no Python.
+    let call = unsafe { GurobiCall::new(call) };
+    let rc = with_handles(cmodel, pool.zip(cls), n, call)?;
     api.check(cmodel.py(), model, rc)
 }
 
@@ -99,7 +108,7 @@ pub fn add_vars(
 /// variable indices and coefficients, so nothing is reshaped. `n_vars` is the model's variable
 /// count, against which every index is checked.
 #[pyfunction]
-#[pyo3(signature = (cmodel, vars, coefs, sense, rhs, n_vars, names=None))]
+#[pyo3(signature = (cmodel, vars, coefs, sense, rhs, n_vars, names=None, pool=None, cls=None))]
 #[allow(clippy::too_many_arguments)]
 pub fn add_constrs(
     cmodel: &Bound<'_, PyAny>,
@@ -109,6 +118,8 @@ pub fn add_constrs(
     rhs: PyChunkedArray,
     n_vars: usize,
     names: Option<PyChunkedArray>,
+    pool: Option<&Bound<'_, PyList>>,
+    cls: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<()> {
     let (api, model) = (api()?, model_ptr(cmodel)?);
     let vars = columns::Lists::new("vars", &vars)?;
@@ -145,23 +156,34 @@ pub fn add_constrs(
         .map(|c| columns::cstrings("names", c, Some(n)))
         .transpose()?;
     let names = name_ptrs(&names);
-    let (cbeg, cind, cval) = match merge_repeats(cbeg, &cind, &cval, width) {
-        Some((beg, ind, val)) => (Cow::Owned(beg), Cow::Owned(ind), Cow::Owned(val)),
-        None => (Cow::Borrowed(cbeg), cind, cval),
+    // Merging repeats is pure Rust, so it runs with the Gurobi call, alongside handle creation.
+    let call = || {
+        let (cbeg, cind, cval) = match merge_repeats(cbeg, &cind, &cval, width) {
+            Some((beg, ind, val)) => (Cow::Owned(beg), Cow::Owned(ind), Cow::Owned(val)),
+            None => (
+                Cow::Borrowed(cbeg),
+                Cow::Borrowed(&*cind),
+                Cow::Borrowed(&*cval),
+            ),
+        };
+        unsafe {
+            (api.xaddconstrs)(
+                model,
+                n_constrs,
+                cind.len(),
+                cbeg.as_ptr(),
+                cind.as_ptr(),
+                cval.as_ptr(),
+                sense.as_ptr(),
+                rhs.as_ptr(),
+                names.map_or(ptr::null(), <[_]>::as_ptr),
+            )
+        }
     };
-    let rc = unsafe {
-        (api.xaddconstrs)(
-            model,
-            n_constrs,
-            cind.len(),
-            cbeg.as_ptr(),
-            cind.as_ptr(),
-            cval.as_ptr(),
-            sense.as_ptr(),
-            rhs.as_ptr(),
-            names.as_ref().map_or(ptr::null(), |v| v.as_ptr()),
-        )
-    };
+    // SAFETY: as in `add_vars`, the call only borrows `model` and the columns above, which outlive
+    // it and are not touched elsewhere until it returns, and it touches no Python.
+    let call = unsafe { GurobiCall::new(call) };
+    let rc = with_handles(cmodel, pool.zip(cls), n, call)?;
     api.check(cmodel.py(), model, rc)
 }
 

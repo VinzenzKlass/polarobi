@@ -4,7 +4,7 @@ from typing import Any, Literal
 import gurobipy as gp
 import polars as pl
 
-from polarobi import _handles, _native
+from . import _handles, _native
 
 type IntoColumn = pl.Series | pl.Expr | str | float | int
 type Coef = IntoColumn
@@ -59,8 +59,9 @@ def add_var(
         ub=pl.Series([float(ub)], dtype=pl.Float64),
         vtype=pl.Series([ord(vtype)], dtype=pl.UInt8),
         names=None if name is None else pl.Series([name], dtype=pl.String),
+        **_handles.target(model, "var"),
     )
-    _handles.register(model, "var", start, 1)
+    _handles.added(model, "var", 1)
     return pl.DataFrame({idx: pl.Series([start], dtype=pl.UInt32)})
 
 
@@ -90,8 +91,9 @@ def add_vars(
         ub=_optional_column(keys, ub, pl.Float64),
         vtype=None if vtype is None else pl.repeat(ord(vtype), n, dtype=pl.UInt8, eager=True),
         names=_names(keys, name, by),
+        **_handles.target(model, "var"),
     )
-    _handles.register(model, "var", start, n)
+    _handles.added(model, "var", n)
     return keys.with_columns(_index(start, n).alias(idx))
 
 
@@ -217,8 +219,9 @@ def add_constrs(
         rows.get_column(_ROW + "rhs"),
         len(model._internal_vars),
         names=None if names is None else rows.get_column(_ROW + "name"),
+        **_handles.target(model, "constr"),
     )
-    _handles.register(model, "constr", start, n)
+    _handles.added(model, "constr", n)
     hidden = [c for c in rows.columns if c.startswith(_ROW)]
     return rows.drop(hidden).with_columns(_index(start, n).alias(idx))
 
