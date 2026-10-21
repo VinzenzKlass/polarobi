@@ -1,4 +1,4 @@
-// `columns` and `model` are public for `benches/native.rs` only, hence hidden from the docs.
+// `columns` and `model` are public for the benchmarks in `benches/` only, so hidden from docs.
 #[doc(hidden)]
 pub mod columns;
 mod gurobi;

@@ -6,7 +6,7 @@ description = "Add Gurobi variables and constraints straight from Arrow/polars m
 
 [lib]
 name = "_native"
-# `rlib` too, so that `benches/native.rs` can call the pure Rust stages directly.
+# `rlib` too, so that the benchmarks in `benches/` can call the pure Rust stages directly.
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
@@ -20,16 +20,11 @@ pyo3 = { version = "0.29.3", features = ["abi3-py312"] }
 pyo3-arrow = { version = "0.19", default-features = false }
 
 [dev-dependencies]
-# Instruction and allocation counts under Valgrind, see benches/native.rs. Linux only.
-iai-callgrind = "0.16.1"
+# Divan, instrumented by CodSpeed when built with `cargo codspeed build`, see benches/stages.rs.
+divan = { version = "5.0.3", package = "codspeed-divan-compat" }
 
 [[bench]]
-name = "native"
-harness = false
-
-[[bench]]
-# Wall-clock timings of the same stages, see benches/timing.rs. Runs anywhere.
-name = "timing"
+name = "stages"
 harness = false
 
 [target."cfg(unix)".dependencies]

@@ -24,6 +24,10 @@ bench = [
     "pandas-stubs>=3.0.5.260914",
     "pyarrow>=26.0.0",
 ]
+# The CodSpeed benchmarks of the Python API, benchmarks/test_api.py.
+codspeed = [
+    "pytest-codspeed>=5.0.3",
+]
 dev = [
     "maturin>=1.15.0",
     "prek>=0.5.5",
