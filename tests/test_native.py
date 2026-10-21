@@ -76,3 +76,34 @@ def test_malformed_lists(model: gp.Model) -> None:
     with pytest.raises(TypeError, match="expected Float64"):
         _add(model, vars_, pl.Series([[1], [2, 3]], dtype=pl.List(pl.Int64)))
     assert model.NumConstrs == 0
+
+
+# Enough elements that the native calls create handles while Gurobi adds them.
+_OVERLAPPED = 1 << 15
+
+
+@pytest.mark.parametrize("n", [5, _OVERLAPPED])
+def test_handles_registered_with_the_call(model: gp.Model, n: int) -> None:
+    pool = model._internal_vars
+    _native.add_vars(model._cmodel, n, pool=pool, cls=gp.Var)
+    vars_ = pl.Series([[i % 3] for i in range(n)], dtype=pl.List(pl.UInt32))
+    _native.add_constrs(
+        model._cmodel,
+        vars_,
+        pl.Series([[1.0]] * n),
+        pl.repeat(_SENSE, n, dtype=pl.UInt8, eager=True),
+        pl.repeat(0.0, n, dtype=pl.Float64, eager=True),
+        len(pool),
+        pool=model._constrs,
+        cls=gp.Constr,
+    )
+    assert [v._colno for v in pool] == list(range(3 + n))
+    assert [c._rowno for c in model._constrs] == list(range(n))
+
+
+@pytest.mark.parametrize("n", [5, _OVERLAPPED])
+def test_failed_call_registers_no_handles(model: gp.Model, n: int) -> None:
+    vtype = pl.repeat(ord("X"), n, dtype=pl.UInt8, eager=True)  # not a variable type
+    with pytest.raises(gp.GurobiError):
+        _native.add_vars(model._cmodel, n, vtype=vtype, pool=model._internal_vars, cls=gp.Var)
+    assert len(model._internal_vars) == 3
