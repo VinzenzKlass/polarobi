@@ -29,6 +29,7 @@ timed, including the final `update()`; nothing is solved, so no license limits a
 
     uv run --group bench python benchmarks/build_model.py
     uv run --group bench python benchmarks/build_model.py --sizes 10000 100000 --repeats 5
+    uv run --group bench python benchmarks/build_model.py --builders polarobi gurobipy_loop
 """
 
 import argparse
@@ -290,6 +291,12 @@ def _pin(cpus: list[int]) -> None:
 
 
 def main() -> None:
+    builders: dict[str, Callable[[gp.Model, Data], Timing]] = {
+        "gurobipy_loop": build_gurobipy_loop,
+        "gurobipy_addconstrs": build_gurobipy_addconstrs,
+        "gurobipy_pandas": build_gurobipy_pandas,
+        "polarobi": build_polarobi,
+    }
     parser = argparse.ArgumentParser(description="Benchmark model building against polarobi.")
     parser.add_argument(
         "--sizes", type=int, nargs="+", default=[10_000, 100_000, 1_000_000, 10_000_000]
@@ -303,15 +310,17 @@ def main() -> None:
         help="Logical CPUs to pin the process to, e.g. 0,2,4,6,8,10. On hybrid CPUs, pick one "
         "thread per performance core: otherwise the OS moves the run between core types.",
     )
+    parser.add_argument(
+        "--builders",
+        nargs="+",
+        choices=builders,
+        default=list(builders),
+        help="Builds to run, all by default. Models are only compared between the builds run.",
+    )
     args = parser.parse_args()
     if args.cpus:
         _pin(args.cpus)
-    builders: dict[str, Callable[[gp.Model, Data], Timing]] = {
-        "gurobipy_loop": build_gurobipy_loop,
-        "gurobipy_addconstrs": build_gurobipy_addconstrs,
-        "gurobipy_pandas": build_gurobipy_pandas,
-        "polarobi": build_polarobi,
-    }
+    builders = {name: builders[name] for name in dict.fromkeys(args.builders)}
 
     env = gp.Env(params={"OutputFlag": 0})
     results: list[dict[str, object]] = []
@@ -364,7 +373,12 @@ def main() -> None:
                 for package in ("polarobi", "polars", "gurobipy", "gurobipy-pandas", "pandas")
             },
         },
-        "settings": {"seed": args.seed, "repeats": args.repeats, "cpus": args.cpus},
+        "settings": {
+            "seed": args.seed,
+            "repeats": args.repeats,
+            "cpus": args.cpus,
+            "builders": list(builders),
+        },
         "model": _model,
         "results": results,
     }
