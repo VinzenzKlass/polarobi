@@ -101,10 +101,27 @@ fn f64s(chunks: usize) -> Vec<ArrayRef> {
     split(Arc::new(all), chunks)
 }
 
-#[divan::bench(args = ["no_repeats", "repeats_throughout", "repeats_at_end_only"])]
+/// `csr` without repeats, each row's variables in increasing order: terms grouped from a frame
+/// of variables.
+fn csr_in_order() -> Csr {
+    let (cbeg, mut cind, cval) = csr(None, 0);
+    for row in cind.chunks_mut(TERMS_PER_ROW) {
+        row.sort_unstable();
+        // Draws that repeat within a row are spread out, keeping the row in order.
+        for i in 1..row.len() {
+            row[i] = row[i].max(row[i - 1] + 1);
+        }
+        let over = (row[row.len() - 1] - (WIDTH as c_int - 1)).max(0);
+        row.iter_mut().for_each(|v| *v -= over);
+    }
+    (cbeg, cind, cval)
+}
+
+#[divan::bench(args = ["no_repeats", "in_order", "repeats_throughout", "repeats_at_end_only"])]
 fn bench_merge_repeats(bencher: Bencher, case: &str) {
     let input = || match case {
         "no_repeats" => csr(None, 0),
+        "in_order" => csr_in_order(),
         "repeats_throughout" => csr(Some(10), 0),
         _ => csr(Some(10), NNZ / TERMS_PER_ROW - 1000),
     };
