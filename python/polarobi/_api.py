@@ -403,8 +403,12 @@ def _names(df: pl.DataFrame, name: str | pl.Expr | None, by: Sequence[str]) -> p
     if not by:
         return pl.repeat(name, df.height, dtype=pl.String, eager=True)
     schema = df.schema
-    keys = pl.concat_str([_key_text(k, schema[k]) for k in by], separator=",")
-    return df.select(pl.concat_str(pl.lit(f"{name}["), keys, pl.lit("]"))).to_series()
+    # One concatenation of all the parts: joining the keys first would build their text twice.
+    parts = [pl.lit(f"{name}[")]
+    for k in by:
+        parts += [_key_text(k, schema[k]), pl.lit(",")]
+    parts[-1] = pl.lit("]")
+    return df.select(pl.concat_str(parts)).to_series()
 
 
 def _key_text(column: str, dtype: pl.DataType) -> pl.Expr:
