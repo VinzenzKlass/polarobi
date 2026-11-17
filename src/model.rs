@@ -263,7 +263,10 @@ pub fn merge_repeats(cbeg: &[usize], cind: &[c_int], cval: &[f64], width: usize)
     for &v in &cind[first_start..first_end] {
         seen[v as usize] = 0;
     }
-    let mut slot = vec![0usize; width];
+    // `slot[v]` is where column `v` sits in the current output row, counted from the row's
+    // start: a merged row has at most `width` terms, and `width` fits `c_int`, so four bytes hold
+    // it however many terms there are in all.
+    let mut slot = vec![0u32; width];
     let mut beg = Vec::with_capacity(cbeg.len());
     beg.extend_from_slice(&cbeg[..first]);
     let mut ind = Vec::with_capacity(cind.len());
@@ -272,14 +275,15 @@ pub fn merge_repeats(cbeg: &[usize], cind: &[c_int], cval: &[f64], width: usize)
     val.extend_from_slice(&cval[..first_start]);
     for (row, (start, end)) in rows().enumerate().skip(first) {
         let row = row as u32 + 1;
-        beg.push(ind.len());
+        let row_start = ind.len();
+        beg.push(row_start);
         for (&v, &coef) in cind[start..end].iter().zip(&cval[start..end]) {
             let column = v as usize;
             if seen[column] == row {
-                val[slot[column]] += coef;
+                val[row_start + slot[column] as usize] += coef;
             } else {
                 seen[column] = row;
-                slot[column] = ind.len();
+                slot[column] = (ind.len() - row_start) as u32;
                 ind.push(v);
                 val.push(coef);
             }
