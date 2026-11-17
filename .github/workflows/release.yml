@@ -23,7 +23,7 @@ jobs:
           - { name: linux-aarch64, runner: ubuntu-22.04-arm, target: aarch64, manylinux: auto }
           - { name: windows-x64, runner: windows-latest, target: x64 }
           # Intel and Apple silicon in one wheel, like gurobipy's own macOS wheel.
-          - { name: macos-universal2, runner: macos-14, target: universal2-apple-darwin }
+          - { name: macos-universal2, runner: macos-latest,target: universal2-apple-darwin }
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
