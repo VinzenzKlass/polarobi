@@ -235,6 +235,12 @@ pub fn merge_repeats(cbeg: &[usize], cind: &[c_int], cval: &[f64], width: usize)
             .chain(std::iter::once(cind.len()));
         cbeg.iter().copied().zip(ends)
     };
+    // Rows whose indices strictly increase hold no repeats, and that is the order terms grouped
+    // from a frame of variables are in. One pass over the rows, which stops at the first index
+    // out of order, then saves the tables.
+    if rows().all(|(start, end)| cind[start..end].windows(2).all(|pair| pair[0] < pair[1])) {
+        return None;
+    }
     // A few short rows against a wide model, the shape of an incremental build, are scanned in
     // place: a table as wide as the model would cost more to allocate than the rows to merge.
     let longest = rows().map(|(start, end)| end - start).max().unwrap_or(0);
@@ -457,6 +463,20 @@ mod tests {
         assert_eq!(merge_repeats(&[0, 2, 3], &[0, 1, 0, 1], &[1.0; 4], 2), None);
         assert_eq!(merge_repeats(&[], &[], &[], 0), None);
         assert_eq!(merge_repeats(&[0, 0], &[], &[], 0), None);
+    }
+
+    #[test]
+    fn merge_none_for_increasing_rows() {
+        // Long rows against a narrow model would take the tables, were the rows not in order.
+        let long: Vec<c_int> = (0..200).collect();
+        let cind = [long.clone(), long].concat();
+        assert_eq!(merge_repeats(&[0, 200], &cind, &vec![1.0; 400], 200), None);
+        // An index equal to the one before it is a repeat, in a row otherwise in order.
+        let merged = merge_repeats(&[0, 2], &[0, 1, 0, 2, 2], &[1.0, 2.0, 3.0, 4.0, 5.0], 3);
+        let want = (vec![0, 2], vec![0, 1, 0, 2], vec![1.0, 2.0, 3.0, 9.0]);
+        assert_eq!(merged, Some(want));
+        // Out of order without a repeat still finds none, by the tables or the scan.
+        assert_eq!(merge_repeats(&[0, 2], &[1, 0, 2, 0], &[1.0; 4], 3), None);
     }
 
     #[test]
