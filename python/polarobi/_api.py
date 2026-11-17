@@ -22,6 +22,8 @@ _SENSE = {
 }
 _ROW = "__polarobi_row"
 _INDEX_TYPES = (pl.Int32, pl.UInt32)
+# Names go to the native calls with their C terminator, which then read them in place.
+_NUL = "\0"
 _INFINITY = gp.GRB.INFINITY  # gurobipy reports values >= Gurobi's infinity as Python infinities.
 
 
@@ -58,7 +60,7 @@ def add_var(
         lb=pl.Series([float(lb)], dtype=pl.Float64),
         ub=pl.Series([float(ub)], dtype=pl.Float64),
         vtype=pl.Series([ord(vtype)], dtype=pl.UInt8),
-        names=None if name is None else pl.Series([name], dtype=pl.String),
+        names=None if name is None else pl.Series([name + _NUL], dtype=pl.String),
         **_handles.target(model, "var"),
     )
     _handles.added(model, "var", 1)
@@ -395,16 +397,18 @@ def _sense(rows: pl.DataFrame, sense: Sense | pl.Series | pl.Expr) -> pl.Series:
 
 
 def _names(df: pl.DataFrame, name: str | pl.Expr | None, by: Sequence[str]) -> pl.Series | None:
+    """The names of `df`'s rows, each ending in the NUL terminator the native calls expect."""
     if name is None:
         return None
     if isinstance(name, pl.Expr):
         # A null name leaves the element unnamed, like gurobipy's default empty name.
-        return _column(df, name, pl.String).fill_null("")
+        names = _column(df, name, pl.String).fill_null("")
+        return names.to_frame().select(pl.concat_str(pl.all(), pl.lit(_NUL))).to_series()
     if not by:
-        return pl.repeat(name, df.height, dtype=pl.String, eager=True)
+        return pl.repeat(name + _NUL, df.height, dtype=pl.String, eager=True)
     schema = df.schema
     keys = pl.concat_str([_key_text(k, schema[k]) for k in by], separator=",")
-    return df.select(pl.concat_str(pl.lit(f"{name}["), keys, pl.lit("]"))).to_series()
+    return df.select(pl.concat_str(pl.lit(f"{name}["), keys, pl.lit("]" + _NUL))).to_series()
 
 
 def _key_text(column: str, dtype: pl.DataType) -> pl.Expr:

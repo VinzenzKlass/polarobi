@@ -59,12 +59,13 @@ fn csr(repeat_every: Option<usize>, first_row: usize) -> Csr {
     (cbeg, cind, cval)
 }
 
-/// `NNZ` names like `x[O123,F45,W6]`, as one contiguous `Utf8` chunk or one `Utf8View` chunk.
+/// `NNZ` names like `x[O123,F45,W6]` with their NUL terminators, as one contiguous `Utf8` chunk
+/// or one `Utf8View` chunk.
 fn names(view: bool) -> Vec<ArrayRef> {
     let mut rng = Lcg::new();
     let texts = (0..NNZ).map(|_| {
         format!(
-            "x[O{},F{},W{}]",
+            "x[O{},F{},W{}]\0",
             rng.next(250_000),
             rng.next(50),
             rng.next(52)
@@ -123,7 +124,13 @@ fn bench_validate(bencher: Bencher) {
 fn bench_cstrings(bencher: Bencher, case: &str) {
     bencher
         .with_inputs(|| names(case == "utf8view"))
-        .bench_local_refs(|chunks| cstrings_of("names", chunks, Some(NNZ)).unwrap());
+        .bench_local_refs(|chunks| {
+            // The pointers borrow the chunks, so their count is what leaves the closure.
+            cstrings_of("names", chunks, Some(NNZ))
+                .unwrap()
+                .ptrs()
+                .len()
+        });
 }
 
 #[divan::bench(args = [1, 8])]
