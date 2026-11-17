@@ -5,6 +5,7 @@
 
 use std::borrow::Cow;
 use std::ffi::{c_char, c_int};
+use std::marker::PhantomData;
 
 use arrow_array::cast::AsArray;
 use arrow_array::types::{Float64Type, Int32Type, UInt8Type, UInt32Type};
@@ -155,22 +156,19 @@ fn chars_of<'a>(
     }
 }
 
-/// NUL-terminated copies of a String column, packed into one buffer. Names must be terminated
-/// for C, so unlike the numeric columns these are always copied, but in one allocation rather
-/// than one per name.
+/// The names of a String column as C strings, read in place. Every name must end in its NUL
+/// terminator, which the Python layer appends, so that a pointer to a name's text is a C string
+/// as it stands and no name is copied.
 #[derive(Debug)]
-pub struct CStrings {
-    /// Only read through `ptrs` outside tests, but owns the memory they point into.
-    #[allow(dead_code)]
-    bytes: Vec<u8>,
-    /// A pointer into `bytes` for each name. `bytes` never reallocates after packing, and moving
-    /// `self` leaves its heap buffer in place, so these stay valid for as long as `self` is.
+pub struct CStrings<'a> {
+    /// A pointer to each name, into the buffers of the chunks borrowed for `'a`.
     ptrs: Vec<*const c_char>,
+    chunks: PhantomData<&'a [ArrayRef]>,
 }
 
-impl CStrings {
+impl CStrings<'_> {
     /// A pointer to each name, in the form the `char **` arguments of the Gurobi API take. The
-    /// pointers are valid for as long as `self` is.
+    /// pointers are valid for as long as the column they were read from is.
     pub fn ptrs(&self) -> &[*const c_char] {
         &self.ptrs
     }
@@ -182,35 +180,43 @@ impl CStrings {
 
     #[cfg(test)]
     fn get(&self, i: usize) -> &std::ffi::CStr {
-        // SAFETY: each pointer is to a NUL-terminated name inside `self.bytes`.
+        // SAFETY: each pointer is to a NUL-terminated name inside the chunks.
         unsafe { std::ffi::CStr::from_ptr(self.ptrs[i]) }
     }
 }
 
-pub fn cstrings(name: &str, col: &PyChunkedArray, len: Option<usize>) -> PyResult<CStrings> {
+pub fn cstrings<'a>(
+    name: &str,
+    col: &'a PyChunkedArray,
+    len: Option<usize>,
+) -> PyResult<CStrings<'a>> {
     cstrings_of(name, col.chunks(), len)
 }
 
-pub fn cstrings_of(name: &str, chunks: &[ArrayRef], len: Option<usize>) -> PyResult<CStrings> {
+pub fn cstrings_of<'a>(
+    name: &str,
+    chunks: &'a [ArrayRef],
+    len: Option<usize>,
+) -> PyResult<CStrings<'a>> {
     let chunks = checked(name, chunks, len)?;
-    let rows: usize = chunks.iter().map(|c| c.len()).sum();
-    // Exactly the bytes of the names plus a terminator each. A sliced string-view chunk still
-    // points at its parent's data buffers, so buffer sizes would over-reserve.
-    // The pointers taken below rely on `bytes` never reallocating, so it is reserved at its exact
-    // final size up front.
-    let mut bytes: Vec<u8> = Vec::with_capacity(chunks.iter().map(text_len).sum::<usize>() + rows);
-    let mut ptrs = Vec::with_capacity(rows);
-    let mut push = |s: Option<&str>| -> PyResult<()> {
+    let mut ptrs = Vec::with_capacity(chunks.iter().map(|c| c.len()).sum());
+    let mut push = |s: Option<&'a str>| -> PyResult<()> {
         let s =
             s.ok_or_else(|| PyValueError::new_err(format!("column '{name}' contains nulls")))?;
-        if s.as_bytes().contains(&0) {
+        // The terminator must be the only NUL: C reads a name up to its first.
+        let Some((&0, text)) = s.as_bytes().split_last() else {
+            return Err(PyValueError::new_err(format!(
+                "column '{name}' holds a name without its NUL terminator"
+            )));
+        };
+        if text.contains(&0) {
             return Err(PyValueError::new_err(format!(
                 "column '{name}' contains a NUL byte"
             )));
         }
-        ptrs.push(bytes.as_ptr_range().end.cast());
-        bytes.extend_from_slice(s.as_bytes());
-        bytes.push(0);
+        // A string view of up to twelve bytes holds its text in the view itself, a longer one
+        // and the other layouts in a data buffer: either way in memory the chunk keeps alive.
+        ptrs.push(s.as_ptr().cast());
         Ok(())
     };
     for chunk in chunks {
@@ -221,35 +227,10 @@ pub fn cstrings_of(name: &str, chunks: &[ArrayRef], len: Option<usize>) -> PyRes
             dt => return Err(type_error(name, dt, "String")),
         }
     }
-    debug_assert_eq!(
-        bytes.len(),
-        bytes.capacity(),
-        "names buffer was not reserved exactly"
-    );
-    Ok(CStrings { bytes, ptrs })
-}
-
-/// The total length of the strings in a chunk, counting only the rows the chunk holds. Zero for
-/// types that are not strings, which `cstrings_of` rejects afterwards.
-fn text_len(chunk: &ArrayRef) -> usize {
-    match chunk.data_type() {
-        // The low 32 bits of a view are the string's length, inlined or not.
-        DataType::Utf8View => chunk
-            .as_string_view()
-            .views()
-            .iter()
-            .map(|&v| v as u32 as usize)
-            .sum(),
-        DataType::Utf8 => {
-            let offsets = chunk.as_string::<i32>().value_offsets();
-            (offsets[offsets.len() - 1] - offsets[0]) as usize
-        }
-        DataType::LargeUtf8 => {
-            let offsets = chunk.as_string::<i64>().value_offsets();
-            (offsets[offsets.len() - 1] - offsets[0]) as usize
-        }
-        _ => 0,
-    }
+    Ok(CStrings {
+        ptrs,
+        chunks: PhantomData,
+    })
 }
 
 /// A List column read as compressed sparse rows: row `i` holds the items at
@@ -459,75 +440,87 @@ mod tests {
 
     #[test]
     fn strings_of_every_layout() {
-        let long = "a name longer than twelve bytes"; // not inlined in a string view
+        let long = "a name longer than twelve bytes\0"; // not inlined in a string view
         let chunks: Vec<ArrayRef> = vec![
-            Arc::new(StringArray::from(vec!["x[1]", ""])),
-            Arc::new(LargeStringArray::from(vec!["\u{fc}"])),
-            Arc::new(StringViewArray::from(vec![long])),
+            Arc::new(StringArray::from(vec!["x[1]\0", "\0"])),
+            Arc::new(LargeStringArray::from(vec!["\u{fc}\0"])),
+            Arc::new(StringViewArray::from(vec![long, "inlined\0"])),
         ];
-        let got = cstrings_of("names", &chunks, Some(4)).unwrap();
+        let got = cstrings_of("names", &chunks, Some(5)).unwrap();
         let strs: Vec<&str> = (0..got.len())
             .map(|i| got.get(i).to_str().unwrap())
             .collect();
-        assert_eq!(strs, ["x[1]", "", "\u{fc}", long]);
-        let ptrs = got.ptrs();
-        assert_eq!(ptrs.len(), 4);
-        // Each pointer reads as its name, NUL-terminated.
-        let via_ptr = unsafe { std::ffi::CStr::from_ptr(ptrs[3]) };
-        assert_eq!(via_ptr.to_str().unwrap(), long);
-        // The buffer was sized exactly: the names' bytes plus one terminator each.
-        let want = "x[1]".len() + "\u{fc}".len() + long.len() + 4;
-        assert_eq!(got.bytes.len(), want);
-        assert_eq!(got.bytes.capacity(), want);
+        let long = long.trim_end_matches('\0');
+        assert_eq!(strs, ["x[1]", "", "\u{fc}", long, "inlined"]);
     }
 
     #[test]
-    fn name_pointers_survive_a_move() {
-        let chunks = arrays([StringArray::from(vec!["a", "bc", "def"])]);
-        let got = cstrings_of("names", &chunks, Some(3)).unwrap();
-        let before = got.ptrs().to_vec();
-        let moved = Box::new(got);
-        assert_eq!(moved.ptrs(), &before[..]);
-        let strs: Vec<&str> = (0..moved.len())
-            .map(|i| moved.get(i).to_str().unwrap())
-            .collect();
-        assert_eq!(strs, ["a", "bc", "def"]);
+    fn names_are_read_in_place() {
+        let long = "a name longer than twelve bytes\0";
+        let chunks = arrays([StringViewArray::from(vec![long, "inlined\0"])]);
+        let got = cstrings_of("names", &chunks, Some(2)).unwrap();
+        let view = chunks[0].as_string_view();
+        let ptrs = got.ptrs();
+        assert_eq!(ptrs[0], view.value(0).as_ptr().cast());
+        assert_eq!(ptrs[1], view.value(1).as_ptr().cast());
+        // The short name lies in the views themselves, the long one in a data buffer.
+        let views = view.views().as_ptr_range();
+        let within = |p: *const c_char| views.contains(&p.cast());
+        assert!(!within(ptrs[0]));
+        assert!(within(ptrs[1]));
+        let chunks = arrays([StringArray::from(vec!["a\0", "bc\0"])]);
+        let got = cstrings_of("names", &chunks, Some(2)).unwrap();
+        let values = chunks[0].as_string::<i32>().value_data().as_ptr();
+        assert_eq!(got.ptrs(), [values.cast(), values.wrapping_add(2).cast()]);
     }
 
     #[test]
-    fn empty_names_get_their_own_terminators() {
-        let chunks = arrays([StringArray::from(vec!["", "", ""])]);
+    fn empty_names_are_their_terminators() {
+        let chunks = arrays([StringArray::from(vec!["\0", "\0", "\0"])]);
         let got = cstrings_of("names", &chunks, Some(3)).unwrap();
-        assert_eq!(got.bytes, [0, 0, 0]);
-        let ptrs = got.ptrs();
-        assert_eq!(ptrs.len(), 3);
-        for (i, &p) in ptrs.iter().enumerate() {
-            assert_eq!(p, got.bytes[i..].as_ptr().cast());
-            assert!(got.get(i).is_empty());
+        assert_eq!(got.ptrs().len(), 3);
+        assert!((0..3).all(|i| got.get(i).is_empty()));
+    }
+
+    #[test]
+    fn sliced_names_are_read_from_the_slice() {
+        let long = "a name longer than twelve bytes, held in a data buffer\0";
+        let mut parent: Vec<&str> = std::iter::repeat_n(long, 1000).collect();
+        parent[11] = "short\0";
+        let want = [long.trim_end_matches('\0'), "short"];
+        for chunks in [
+            arrays([StringViewArray::from(parent.clone()).slice(10, 2)]),
+            arrays([StringArray::from(parent.clone()).slice(10, 2)]),
+        ] {
+            let got = cstrings_of("names", &chunks, Some(2)).unwrap();
+            let strs: Vec<&str> = (0..2).map(|i| got.get(i).to_str().unwrap()).collect();
+            assert_eq!(strs, want);
         }
     }
 
     #[test]
-    fn packed_names_are_sized_by_the_slice_not_the_parent() {
-        let long = "a name longer than twelve bytes, held in a data buffer";
-        let parent: Vec<&str> = std::iter::repeat_n(long, 1000).collect();
-        let chunks = arrays([StringViewArray::from(parent.clone()).slice(10, 2)]);
-        let got = cstrings_of("names", &chunks, Some(2)).unwrap();
-        assert_eq!(got.bytes.capacity(), 2 * (long.len() + 1));
-        let chunks = arrays([StringArray::from(parent).slice(10, 2)]);
-        let got = cstrings_of("names", &chunks, Some(2)).unwrap();
-        assert_eq!(got.bytes.capacity(), 2 * (long.len() + 1));
-    }
-
-    #[test]
     fn bad_strings_are_rejected() {
-        let chunks = arrays([StringArray::from(vec!["a\0b"])]);
-        let err = cstrings_of("names", &chunks, None).unwrap_err();
-        assert_eq!(
-            message(err),
-            "ValueError: column 'names' contains a NUL byte"
-        );
-        let chunks = arrays([StringArray::from(vec![Some("a"), None])]);
+        for bad in ["a\0b\0", "a\0\0", "\0\0"] {
+            for chunks in [
+                arrays([StringArray::from(vec![bad])]),
+                arrays([StringViewArray::from(vec![bad])]),
+            ] {
+                let err = cstrings_of("names", &chunks, None).unwrap_err();
+                assert_eq!(
+                    message(err),
+                    "ValueError: column 'names' contains a NUL byte"
+                );
+            }
+        }
+        for bad in ["a", "", "a\0b"] {
+            let chunks = arrays([StringArray::from(vec!["ok\0", bad])]);
+            let err = cstrings_of("names", &chunks, None).unwrap_err();
+            assert_eq!(
+                message(err),
+                "ValueError: column 'names' holds a name without its NUL terminator"
+            );
+        }
+        let chunks = arrays([StringArray::from(vec![Some("a\0"), None])]);
         let err = cstrings_of("names", &chunks, None).unwrap_err();
         assert_eq!(message(err), "ValueError: column 'names' contains nulls");
         let chunks = arrays([Int32Array::from(vec![1])]);
@@ -536,7 +529,7 @@ mod tests {
             message(err),
             "TypeError: column 'names' has type Int32, expected String"
         );
-        let chunks = arrays([StringArray::from(vec!["a"])]);
+        let chunks = arrays([StringArray::from(vec!["a\0"])]);
         let err = cstrings_of("names", &chunks, Some(2)).unwrap_err();
         assert_eq!(
             message(err),
