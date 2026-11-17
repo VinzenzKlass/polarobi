@@ -11,8 +11,8 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: CPython",
 ]
 dependencies = [
-    "gurobipy>=14.0.0b1,<14.1",
-    "polars>=2.0.0",
+    "gurobipy>=14.0.0,<14.1",
+    "polars>=2.1.0",
 ]
 [dependency-groups]
 # The benchmark and its figures: the libraries it compares polarobi against, and their type stubs.
